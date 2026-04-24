@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import axios from 'axios';
+import * as cheerio from 'cheerio';
 
-// Твои старые алиасы городов для точности
 const KZ_CITY_ALIASES: Record<string, string[]> = {
   "Алматы": ["алматы", "almaty"],
   "Астана": ["астана", "astana", "нур-султан", "nur-sultan"],
@@ -12,66 +12,73 @@ const KZ_CITY_ALIASES: Record<string, string[]> = {
   "Караганда": ["караганда", "karaganda"],
   "Павлодар": ["павлодар", "pavlodar"],
   "Костанай": ["костанай", "kostanay"],
-  "Кокшетау": ["кокшетау", "kokshetau"],
-  "Петропавловск": ["петропавловск", "petropavlovsk"],
-  "Усть-Каменогорск": ["усть-каменогорск", "oskemen"],
-  "Семей": ["семей", "semey"],
-  "Талдыкорган": ["талдыкорган", "taldykorgan"],
-  "Тараз": ["тараз", "taraz"],
-  "Туркестан": ["туркестан", "turkistan"],
-  "Кызылорда": ["кызылорда", "kyzylorda"],
-  "Уральск": ["уральск", "oral"],
 };
 
-function detectCity(title: string, location: string): string {
-  const text = `${title} ${location}`.toLowerCase();
+// Список твоих старых каналов из server.js
+const TELEGRAM_CHANNELS = [
+  "kz_jobs", "almaty_rabota", "astana_rabota", "shymkent_rabota", 
+  "rabotaaktau", "aktobe_job", "atyrau_rabota_1", "karaganda_rabota"
+];
+
+function detectCity(text: string): string {
+  const lowText = text.toLowerCase();
   for (const [city, aliases] of Object.entries(KZ_CITY_ALIASES)) {
-    if (aliases.some(alias => text.includes(alias))) return city;
+    if (aliases.some(alias => lowText.includes(alias))) return city;
   }
-  return location || "Казахстан";
+  return "Казахстан";
 }
 
 export async function GET() {
   try {
-    // 1. Загрузка из HeadHunter Kazakhstan
-    const hhResponse = await axios.get('https://api.hh.ru/vacancies', {
-      params: { 
-        area: '113', 
-        per_page: 100,
-        order_by: 'publication_time'
-      },
-      headers: { 'User-Agent': 'WorkKZ/1.0 (contact: admin@workkz.com)' },
-      timeout: 10000
-    });
+    const allJobs: any[] = [];
 
-    if (!hhResponse.data || !Array.isArray(hhResponse.data.items)) {
-      throw new Error("Invalid response from HH API");
+    // 1. ЗАГРУЗКА ИЗ HEADHUNTER
+    try {
+      const hhRes = await axios.get('https://api.hh.ru/vacancies', {
+        params: { area: '113', per_page: 50 },
+        headers: { 'User-Agent': 'WorkKZ/1.0' }
+      });
+      const hhJobs = hhRes.data.items.map((item: any) => ({
+        id: `hh-${item.id}`,
+        title: item.name,
+        company: item.employer?.name || "HeadHunter",
+        salary: item.salary ? `${item.salary.from || ''} ${item.salary.currency}` : "З/П по договоренности",
+        city: detectCity(`${item.name} ${item.area?.name}`),
+        url: item.alternate_url,
+        source: "HH.kz"
+      }));
+      allJobs.push(...hhJobs);
+    } catch (e) { console.error("HH Error"); }
+
+    // 2. ЗАГРУЗКА ИЗ TELEGRAM (Парсинг публичных каналов)
+    for (const channel of TELEGRAM_CHANNELS) {
+      try {
+        const { data } = await axios.get(`https://t.me/s/${channel}`, { timeout: 5000 });
+        const $ = cheerio.load(data);
+        
+        $(".tgme_widget_message_wrap").each((i, el) => {
+          if (i > 10) return; // Берем последние 10 сообщений
+          const text = $(el).find(".tgme_widget_message_text").text();
+          if (!text) return;
+          
+          const link = $(el).find("a.tgme_widget_message_date").attr("href");
+          
+          allJobs.push({
+            id: `tg-${channel}-${i}`,
+            title: text.split('\n')[0].slice(0, 100) || "Вакансия из Telegram",
+            company: `@${channel}`,
+            salary: "См. в описании",
+            city: detectCity(text) || "Казахстан",
+            url: link || `https://t.me/${channel}`,
+            source: "Telegram"
+          });
+        });
+      } catch (e) { console.error(`TG Error for ${channel}`); }
     }
 
-    const jobs = hhResponse.data.items.map((item: any) => ({
-      id: `hh-${item.id}`,
-      title: item.name,
-      company: item.employer?.name || "Не указана",
-      salary: item.salary ? 
-        `${item.salary.from || ''} ${item.salary.to ? '- ' + item.salary.to : ''} ${item.salary.currency}`.trim() : 
-        "З/П не указана",
-      city: detectCity(item.name, item.area?.name),
-      url: item.alternate_url,
-      postedAt: item.published_at,
-      type: item.schedule?.name || "Полный день"
-    }));
-
-    return NextResponse.json({ 
-      jobs, 
-      total: jobs.length,
-      timestamp: new Date().toISOString()
-    });
-  } catch (error: any) {
-    console.error("Ошибка API вакансий:", error.message);
-    return NextResponse.json({ 
-      jobs: [], 
-      error: error.message,
-      timestamp: new Date().toISOString()
-    }, { status: 500 });
+    // Сортировка (сначала новые)
+    return NextResponse.json({ jobs: allJobs.slice(0, 150) });
+  } catch (error) {
+    return NextResponse.json({ jobs: [], error: "Server Error" }, { status: 500 });
   }
 }

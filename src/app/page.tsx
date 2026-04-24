@@ -152,9 +152,14 @@ export default function HomePage() {
                     <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/20 group-hover:scale-110 transition-all">
                       <Globe className="w-6 h-6 text-blue-400" />
                     </div>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-blue-400/60 border border-blue-400/20 px-2 py-1 rounded-lg">
-                      {job.type}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-blue-400/60 border border-blue-400/20 px-2 py-1 rounded-lg">
+                        {job.type || 'LIVE'}
+                      </span>
+                      <span className="text-[9px] font-bold text-slate-500">
+                        {job.source}
+                      </span>
+                    </div>
                   </div>
 
                   <h3 className="text-lg font-bold mb-2 group-hover:text-blue-400 transition-colors line-clamp-2 leading-tight">
