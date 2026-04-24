@@ -679,7 +679,11 @@ main {
   font-size: 1.05rem;
 }
 
-/* Modals */
+/* Modals & Utils */
+.hidden {
+  display: none !important;
+}
+
 .modal {
   position: fixed;
   inset: 0;
