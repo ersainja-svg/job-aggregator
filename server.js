@@ -102,57 +102,19 @@ const TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL = Math.min(
   Math.max(Number(process.env.TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL || 40), 5),
   100,
 );
-let bot = null;
-if (TELEGRAM_BOT_TOKEN) {
-  try {
-    bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
-    console.log("Telegram Bot started in polling mode.");
-
-    bot.onText(/\/start/, (msg) => {
-      const chatId = msg.chat.id;
-      bot.sendMessage(
-        chatId,
-        "Привет! Я бот для уведомлений о новых вакансиях.\n\n" +
-        "Чтобы подписаться на новые вакансии определенной категории, отправьте:\n" +
-        "`/subscribe <Категория>`\n" +
-        "Например: `/subscribe Frontend`\n\n" +
-        "Доступные категории: Backend, Frontend, Mobile, Data / Analytics, DevOps / SRE, QA / Testing, Design, Marketing / Sales, Support / Operations.\n\n" +
-        "Чтобы отписаться, отправьте:\n`/unsubscribe`",
-        { parse_mode: "Markdown" }
-      );
-    });
-
-    bot.onText(/\/subscribe (.+)/i, (msg, match) => {
-      const chatId = msg.chat.id;
-      const specialty = match[1].trim();
-
-      const existing = subscriptions.find((s) => s.chatId === chatId);
-      if (existing) {
-        existing.specialty = specialty;
-      } else {
-        subscriptions.push({ chatId, specialty });
-      }
-      saveSubscriptions();
-
-      bot.sendMessage(chatId, `Вы успешно подписались на уведомления о новых вакансиях в категории: *${specialty}*`, { parse_mode: "Markdown" });
-    });
-
-    bot.onText(/\/unsubscribe/i, (msg) => {
-      const chatId = msg.chat.id;
-      subscriptions = subscriptions.filter((s) => s.chatId !== chatId);
-      saveSubscriptions();
-      bot.sendMessage(chatId, "Вы отписались от уведомлений.");
-    });
-  } catch (error) {
-    console.error("Failed to start Telegram Bot:", error);
-  }
-}
-
+// ─── Subscriptions persistence ───
 const SUBSCRIPTIONS_FILE = path.join(__dirname, "subscriptions.json");
 let subscriptions = [];
 try {
   if (fs.existsSync(SUBSCRIPTIONS_FILE)) {
-    subscriptions = JSON.parse(fs.readFileSync(SUBSCRIPTIONS_FILE, "utf-8"));
+    const raw = JSON.parse(fs.readFileSync(SUBSCRIPTIONS_FILE, "utf-8"));
+    subscriptions = raw.map((s) => ({
+      chatId: s.chatId,
+      specialties: s.specialties || (s.specialty ? [s.specialty] : []),
+      cities: s.cities || [],
+      favorites: s.favorites || [],
+      createdAt: s.createdAt || new Date().toISOString(),
+    }));
   }
 } catch (e) {
   console.error("Error reading subscriptions:", e);
@@ -161,6 +123,259 @@ try {
 function saveSubscriptions() {
   fs.writeFileSync(SUBSCRIPTIONS_FILE, JSON.stringify(subscriptions, null, 2));
 }
+
+function getOrCreateUser(chatId) {
+  let user = subscriptions.find((s) => s.chatId === chatId);
+  if (!user) {
+    user = { chatId, specialties: [], cities: [], favorites: [], createdAt: new Date().toISOString() };
+    subscriptions.push(user);
+    saveSubscriptions();
+  }
+  if (!user.specialties) user.specialties = [];
+  if (!user.cities) user.cities = [];
+  if (!user.favorites) user.favorites = [];
+  return user;
+}
+
+
+// ─── Telegram Bot ───
+let bot = null;
+if (TELEGRAM_BOT_TOKEN) {
+  try {
+    bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+    console.log("Telegram Bot started in polling mode.");
+
+    function mainMenuKb() {
+      return { reply_markup: { inline_keyboard: [
+        [{ text: "\u{1F4CB} \u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u0438", callback_data: "m_spec" }, { text: "\u{1F3D9} \u0413\u043E\u0440\u043E\u0434\u0430", callback_data: "m_city" }],
+        [{ text: "\u{1F50D} \u041F\u043E\u0438\u0441\u043A", callback_data: "m_search" }, { text: "\u2B50 \u0418\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435", callback_data: "m_fav" }],
+        [{ text: "\u{1F464} \u041F\u0440\u043E\u0444\u0438\u043B\u044C", callback_data: "m_profile" }, { text: "\u{1F4CA} \u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430", callback_data: "m_stats" }],
+        [{ text: "\u2753 \u041F\u043E\u043C\u043E\u0449\u044C", callback_data: "m_help" }],
+      ] }, parse_mode: "Markdown" };
+    }
+
+    function specKb(chatId) {
+      const user = getOrCreateUser(chatId);
+      const rows = [];
+      for (let i = 0; i < ALL_SPECIALTIES.length; i += 2) {
+        const row = [];
+        for (let j = i; j < Math.min(i + 2, ALL_SPECIALTIES.length); j++) {
+          const s = ALL_SPECIALTIES[j];
+          row.push({ text: `${user.specialties.includes(s) ? "\u2705" : "\u2B1C"} ${s}`, callback_data: `ts_${j}` });
+        }
+        rows.push(row);
+      }
+      rows.push([{ text: `${user.specialties.includes("All") ? "\u2705" : "\u2B1C"} \u{1F4CC} \u0412\u0441\u0435 \u043A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u0438`, callback_data: "ts_all" }]);
+      rows.push([{ text: "\u{1F519} \u041C\u0435\u043D\u044E", callback_data: "m_main" }]);
+      return { reply_markup: { inline_keyboard: rows } };
+    }
+
+    function cityKb(chatId, pg) {
+      const user = getOrCreateUser(chatId);
+      const SZ = 10, start = (pg || 0) * SZ;
+      const slice = ALL_CITIES.slice(start, start + SZ);
+      const rows = [];
+      for (let i = 0; i < slice.length; i += 2) {
+        const row = [];
+        for (let j = i; j < Math.min(i + 2, slice.length); j++) {
+          const c = slice[j];
+          row.push({ text: `${user.cities.includes(c) ? "\u2705" : "\u2B1C"} ${c}`, callback_data: `tc_${start + j}` });
+        }
+        rows.push(row);
+      }
+      const nav = [];
+      if (start > 0) nav.push({ text: "\u2B05\uFE0F", callback_data: `cp_${(pg || 0) - 1}` });
+      if (start + SZ < ALL_CITIES.length) nav.push({ text: "\u27A1\uFE0F", callback_data: `cp_${(pg || 0) + 1}` });
+      if (nav.length) rows.push(nav);
+      rows.push([{ text: "\u{1F519} \u041C\u0435\u043D\u044E", callback_data: "m_main" }]);
+      return { reply_markup: { inline_keyboard: rows } };
+    }
+
+    // /start
+    bot.onText(/\/start/, (msg) => {
+      getOrCreateUser(msg.chat.id);
+      bot.sendMessage(msg.chat.id,
+        "\u{1F44B} *\u0414\u043E\u0431\u0440\u043E \u043F\u043E\u0436\u0430\u043B\u043E\u0432\u0430\u0442\u044C \u0432 WorkFlow Jobs!*\n\n" +
+        "\u042F \u043F\u043E\u043C\u043E\u0433\u0443 \u043D\u0430\u0445\u043E\u0434\u0438\u0442\u044C \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u0438 \u0438 \u043F\u043E\u043B\u0443\u0447\u0430\u0442\u044C \u0443\u0432\u0435\u0434\u043E\u043C\u043B\u0435\u043D\u0438\u044F.\n" +
+        "\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435 \u0438\u0437 \u043C\u0435\u043D\u044E:",
+        mainMenuKb());
+    });
+
+    // /help
+    bot.onText(/\/help/, (msg) => {
+      bot.sendMessage(msg.chat.id,
+        "\u{1F4D6} *\u041A\u043E\u043C\u0430\u043D\u0434\u044B:*\n" +
+        "/start \u2014 \u043C\u0435\u043D\u044E\n/search _\u0437\u0430\u043F\u0440\u043E\u0441_ \u2014 \u043F\u043E\u0438\u0441\u043A \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u0439\n" +
+        "/profile \u2014 \u043F\u0440\u043E\u0444\u0438\u043B\u044C\n/stats \u2014 \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430",
+        { parse_mode: "Markdown" });
+    });
+
+    // /profile
+    bot.onText(/\/profile/, (msg) => {
+      const u = getOrCreateUser(msg.chat.id);
+      const sp = u.specialties.length ? u.specialties.join(", ") : "\u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u044B";
+      const ct = u.cities.length ? u.cities.join(", ") : "\u0432\u0441\u0435 \u0433\u043E\u0440\u043E\u0434\u0430";
+      bot.sendMessage(msg.chat.id,
+        `\u{1F464} *\u041F\u0440\u043E\u0444\u0438\u043B\u044C*\n\u{1F4CB} \u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u0438: ${sp}\n\u{1F3D9} \u0413\u043E\u0440\u043E\u0434\u0430: ${ct}\n\u2B50 \u0418\u0437\u0431\u0440\u0430\u043D\u043D\u044B\u0445: ${u.favorites.length}`,
+        { parse_mode: "Markdown" });
+    });
+
+    // /stats
+    bot.onText(/\/stats/, (msg) => {
+      bot.sendMessage(msg.chat.id,
+        `\u{1F4CA} *\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430*\n\u{1F465} ${subscriptions.length} \u044E\u0437\u0435\u0440\u043E\u0432\n\u{1F4C4} ${cachedJobs.length} \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u0439\n\u{1F1F0}\u{1F1FF} ${cachedJobs.filter(isKzJob).length} KZ`,
+        { parse_mode: "Markdown" });
+    });
+
+    // /search <query>
+    bot.onText(/\/search (.+)/i, (msg, match) => {
+      doSearch(msg.chat.id, match[1].trim().toLowerCase(), 0);
+    });
+
+    function doSearch(chatId, q, off) {
+      const hits = cachedJobs.filter((j) =>
+        `${j.title} ${j.company} ${j.location} ${j.description}`.toLowerCase().includes(q));
+      const PS = 5, page = hits.slice(off, off + PS);
+      if (!hits.length) {
+        bot.sendMessage(chatId, `\u{1F50D} \u041F\u043E \u00AB${q}\u00BB \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E.`);
+        return;
+      }
+      let txt = `\u{1F50D} *\u00AB${q}\u00BB* (${off + 1}-${Math.min(off + PS, hits.length)} \u0438\u0437 ${hits.length})\n\n`;
+      for (const j of page) {
+        txt += `\u25AA\uFE0F *${j.title}*\n\u{1F3E2} ${j.company} \u00B7 \u{1F4CD} ${j.location}\n[\u041E\u0442\u043A\u0440\u044B\u0442\u044C](${j.url})\n\n`;
+      }
+      const nav = [];
+      const qk = Buffer.from(q).toString("base64").slice(0, 28);
+      if (off > 0) nav.push({ text: "\u2B05\uFE0F", callback_data: `sr_${qk}_${off - PS}` });
+      if (off + PS < hits.length) nav.push({ text: "\u27A1\uFE0F", callback_data: `sr_${qk}_${off + PS}` });
+      const kb = nav.length ? { reply_markup: { inline_keyboard: [nav] } } : {};
+      bot.sendMessage(chatId, txt, { parse_mode: "Markdown", disable_web_page_preview: true, ...kb });
+    }
+
+    // ── Callback queries ──
+    bot.on("callback_query", async (cb) => {
+      const chatId = cb.message.chat.id, msgId = cb.message.message_id, d = cb.data;
+      try {
+        if (d === "m_main") {
+          await bot.editMessageText("\u{1F3E0} *\u0413\u043B\u0430\u0432\u043D\u043E\u0435 \u043C\u0435\u043D\u044E*\n\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435:",
+            { chat_id: chatId, message_id: msgId, parse_mode: "Markdown", ...mainMenuKb() });
+
+        } else if (d === "m_spec") {
+          await bot.editMessageText("\u{1F4CB} *\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u043A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u0438:*\n\u041D\u0430\u0436\u043C\u0438\u0442\u0435 \u0434\u043B\u044F \u0432\u043A\u043B/\u0432\u044B\u043A\u043B:",
+            { chat_id: chatId, message_id: msgId, parse_mode: "Markdown", ...specKb(chatId) });
+
+        } else if (d === "m_city") {
+          await bot.editMessageText("\u{1F3D9} *\u0412\u044B\u0431\u0435\u0440\u0438\u0442\u0435 \u0433\u043E\u0440\u043E\u0434\u0430:*\n\u041F\u0443\u0441\u0442\u043E = \u0432\u0441\u0435 \u0433\u043E\u0440\u043E\u0434\u0430:",
+            { chat_id: chatId, message_id: msgId, parse_mode: "Markdown", ...cityKb(chatId, 0) });
+
+        } else if (d === "m_search") {
+          await bot.editMessageText("\u{1F50D} \u041E\u0442\u043F\u0440\u0430\u0432\u044C\u0442\u0435: `/search \u0437\u0430\u043F\u0440\u043E\u0441`\n\u041D\u0430\u043F\u0440\u0438\u043C\u0435\u0440: `/search Python`",
+            { chat_id: chatId, message_id: msgId, parse_mode: "Markdown",
+              reply_markup: { inline_keyboard: [[{ text: "\u{1F519} \u041C\u0435\u043D\u044E", callback_data: "m_main" }]] } });
+
+        } else if (d === "m_fav") {
+          const u = getOrCreateUser(chatId);
+          if (!u.favorites.length) {
+            await bot.editMessageText("\u2B50 *\u0418\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435 \u043F\u0443\u0441\u0442\u043E*",
+              { chat_id: chatId, message_id: msgId, parse_mode: "Markdown",
+                reply_markup: { inline_keyboard: [[{ text: "\u{1F519} \u041C\u0435\u043D\u044E", callback_data: "m_main" }]] } });
+          } else {
+            let txt = "\u2B50 *\u0418\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435:*\n\n";
+            for (const fid of u.favorites.slice(0, 10)) {
+              const j = cachedJobs.find((x) => x.id === fid);
+              if (j) txt += `\u25AA\uFE0F *${j.title}*\n\u{1F3E2} ${j.company}\n[\u041E\u0442\u043A\u0440\u044B\u0442\u044C](${j.url})\n\n`;
+              else txt += "\u25AA\uFE0F _\u0443\u0434\u0430\u043B\u0435\u043D\u0430_\n";
+            }
+            await bot.editMessageText(txt,
+              { chat_id: chatId, message_id: msgId, parse_mode: "Markdown", disable_web_page_preview: true,
+                reply_markup: { inline_keyboard: [[{ text: "\u{1F5D1} \u041E\u0447\u0438\u0441\u0442\u0438\u0442\u044C", callback_data: "clr_fav" }, { text: "\u{1F519} \u041C\u0435\u043D\u044E", callback_data: "m_main" }]] } });
+          }
+
+        } else if (d === "clr_fav") {
+          getOrCreateUser(chatId).favorites = [];
+          saveSubscriptions();
+          await bot.editMessageText("\u2B50 \u0418\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435 \u043E\u0447\u0438\u0449\u0435\u043D\u043E!",
+            { chat_id: chatId, message_id: msgId,
+              reply_markup: { inline_keyboard: [[{ text: "\u{1F519} \u041C\u0435\u043D\u044E", callback_data: "m_main" }]] } });
+
+        } else if (d === "m_profile") {
+          const u = getOrCreateUser(chatId);
+          const sp = u.specialties.length ? u.specialties.join(", ") : "\u2014";
+          const ct = u.cities.length ? u.cities.join(", ") : "\u0432\u0441\u0435";
+          await bot.editMessageText(
+            `\u{1F464} *\u041F\u0440\u043E\u0444\u0438\u043B\u044C*\n\u{1F4CB} ${sp}\n\u{1F3D9} ${ct}\n\u2B50 ${u.favorites.length}`,
+            { chat_id: chatId, message_id: msgId, parse_mode: "Markdown",
+              reply_markup: { inline_keyboard: [[{ text: "\u{1F519} \u041C\u0435\u043D\u044E", callback_data: "m_main" }]] } });
+
+        } else if (d === "m_stats") {
+          await bot.editMessageText(
+            `\u{1F4CA} *\u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430*\n\u{1F465} ${subscriptions.length}\n\u{1F4C4} ${cachedJobs.length}\n\u{1F1F0}\u{1F1FF} ${cachedJobs.filter(isKzJob).length}`,
+            { chat_id: chatId, message_id: msgId, parse_mode: "Markdown",
+              reply_markup: { inline_keyboard: [[{ text: "\u{1F519} \u041C\u0435\u043D\u044E", callback_data: "m_main" }]] } });
+
+        } else if (d === "m_help") {
+          await bot.editMessageText("\u{1F4D6} /start \u2014 \u043C\u0435\u043D\u044E\n/search \u2014 \u043F\u043E\u0438\u0441\u043A\n/profile \u2014 \u043F\u0440\u043E\u0444\u0438\u043B\u044C\n/stats \u2014 \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430",
+            { chat_id: chatId, message_id: msgId,
+              reply_markup: { inline_keyboard: [[{ text: "\u{1F519} \u041C\u0435\u043D\u044E", callback_data: "m_main" }]] } });
+
+        // Toggle specialty
+        } else if (d.startsWith("ts_")) {
+          const u = getOrCreateUser(chatId);
+          if (d === "ts_all") {
+            u.specialties = u.specialties.includes("All") ? [] : ["All"];
+          } else {
+            const idx = parseInt(d.slice(3), 10), s = ALL_SPECIALTIES[idx];
+            if (s) {
+              u.specialties = u.specialties.filter((x) => x !== "All");
+              if (u.specialties.includes(s)) u.specialties = u.specialties.filter((x) => x !== s);
+              else u.specialties.push(s);
+            }
+          }
+          saveSubscriptions();
+          await bot.editMessageReplyMarkup(specKb(chatId).reply_markup, { chat_id: chatId, message_id: msgId });
+
+        // Toggle city
+        } else if (d.startsWith("tc_")) {
+          const u = getOrCreateUser(chatId), idx = parseInt(d.slice(3), 10), c = ALL_CITIES[idx];
+          if (c) {
+            if (u.cities.includes(c)) u.cities = u.cities.filter((x) => x !== c);
+            else u.cities.push(c);
+            saveSubscriptions();
+          }
+          await bot.editMessageReplyMarkup(cityKb(chatId, Math.floor(idx / 10)).reply_markup, { chat_id: chatId, message_id: msgId });
+
+        // City page navigation
+        } else if (d.startsWith("cp_")) {
+          await bot.editMessageReplyMarkup(cityKb(chatId, parseInt(d.slice(3), 10)).reply_markup, { chat_id: chatId, message_id: msgId });
+
+        // Search pagination
+        } else if (d.startsWith("sr_")) {
+          const parts = d.split("_"), off = parseInt(parts.pop(), 10), qk = parts.slice(1).join("_");
+          doSearch(chatId, Buffer.from(qk, "base64").toString("utf-8"), off);
+
+        // Add to favorites
+        } else if (d.startsWith("fav_")) {
+          const u = getOrCreateUser(chatId), jid = d.slice(4);
+          if (!u.favorites.includes(jid)) {
+            u.favorites.push(jid);
+            if (u.favorites.length > 50) u.favorites.shift();
+            saveSubscriptions();
+          }
+          await bot.answerCallbackQuery(cb.id, { text: "\u2B50 \u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E!" });
+          return;
+        }
+        await bot.answerCallbackQuery(cb.id);
+      } catch (err) {
+        console.error("CB error:", err.message);
+        try { await bot.answerCallbackQuery(cb.id, { text: "\u041E\u0448\u0438\u0431\u043A\u0430" }); } catch (_) {}
+      }
+    });
+
+  } catch (error) {
+    console.error("Failed to start Telegram Bot:", error);
+  }
+}
+
 
 const KZ_SOURCE_CATALOG = [
   { id: "hh", name: "HeadHunter Kazakhstan", type: "website", url: "https://hh.kz", mode: "live" },
@@ -255,6 +470,10 @@ function detectSpecialtyAI(job) {
   }
   return "Other";
 }
+
+const ALL_SPECIALTIES = SPECIALTY_PATTERNS.map((r) => r.specialty);
+const ALL_CITIES = Object.keys(KZ_CITY_ALIASES).slice(0, 20);
+let cachedJobs = [];
 
 function deriveRegion(job) {
   const sourceId = String(job.sourceId || "").toLowerCase();
@@ -930,6 +1149,9 @@ async function fetchAndNormalizeAllJobs() {
 
 app.get("/api/jobs", async (req, res) => {
   const { normalizedJobs, errors } = await fetchAndNormalizeAllJobs();
+  // Keep cached copy for bot search
+  cachedJobs = normalizedJobs;
+
 
   let kzJobs = normalizedJobs.filter((job) => isKzJob(job));
   if (!kzJobs.length) {
@@ -955,6 +1177,8 @@ async function runBackgroundJobCheck() {
 
   try {
     const { normalizedJobs } = await fetchAndNormalizeAllJobs();
+    // Update cached jobs for search/favorites
+    cachedJobs = normalizedJobs;
 
     if (isFirstRun) {
       for (const job of normalizedJobs) {
@@ -977,23 +1201,44 @@ async function runBackgroundJobCheck() {
       console.log(`Found ${newJobs.length} new jobs. Processing notifications...`);
       for (const job of newJobs) {
         const specialty = job.specialty;
+        const jobCity = job.city || job.location || "";
 
-        const subscribers = subscriptions.filter(s => s.specialty.toLowerCase() === specialty.toLowerCase() || s.specialty.toLowerCase() === "all");
+        // Match subscribers: check specialties and cities
+        const subscribers = subscriptions.filter((s) => {
+          // Check specialty match
+          const specMatch = !s.specialties || !s.specialties.length
+            || s.specialties.includes("All")
+            || s.specialties.some((sp) => sp.toLowerCase() === specialty.toLowerCase());
+          if (!specMatch) return false;
+
+          // Check city match (empty = all cities)
+          if (!s.cities || !s.cities.length) return true;
+          return s.cities.some((c) => jobCity.toLowerCase().includes(c.toLowerCase()));
+        });
 
         for (const sub of subscribers) {
-          const msg = `🚀 *Новая вакансия: ${specialty}*\n\n` +
+          const msg =
+            `\u{1F680} *\u041D\u043E\u0432\u0430\u044F \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u044F: ${specialty}*\n\n` +
             `*${job.title}*\n` +
-            `🏢 ${job.company}\n` +
-            `📍 ${job.location}\n\n` +
-            `${job.description.slice(0, 200)}...\n\n` +
-            `[Откликнуться](${job.url})`;
+            `\u{1F3E2} ${job.company}\n` +
+            `\u{1F4CD} ${job.location}\n` +
+            `\u{1F4BC} ${job.type}\n\n` +
+            `${(job.description || "").slice(0, 200)}...\n\n` +
+            `[\u041E\u0442\u043A\u043B\u0438\u043A\u043D\u0443\u0442\u044C\u0441\u044F](${job.url})`;
 
-          bot.sendMessage(sub.chatId, msg, { parse_mode: "Markdown", disable_web_page_preview: true })
-            .catch(err => console.error("Error sending TG msg:", err.message));
+          const favBtn = { text: "\u2B50 \u0412 \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435", callback_data: `fav_${job.id.slice(0, 50)}` };
+          const openBtn = { text: "\u{1F517} \u041E\u0442\u043A\u0440\u044B\u0442\u044C", url: job.url };
+
+          bot.sendMessage(sub.chatId, msg, {
+            parse_mode: "Markdown",
+            disable_web_page_preview: true,
+            reply_markup: { inline_keyboard: [[openBtn, favBtn]] },
+          }).catch((err) => console.error("Error sending TG msg:", err.message));
         }
       }
     }
 
+    // Trim seen IDs to prevent memory leaks
     if (seenJobIds.size > 5000) {
       const arr = Array.from(seenJobIds);
       seenJobIds.clear();
@@ -1008,6 +1253,7 @@ async function runBackgroundJobCheck() {
 
 setInterval(runBackgroundJobCheck, 15 * 60 * 1000);
 setTimeout(runBackgroundJobCheck, 5000);
+
 
 
 app.get('/*all', (req, res) => {
