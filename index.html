@@ -55,6 +55,8 @@
       <button class="section-tab" data-section="cities" type="button">Города KZ</button>
       <button class="section-tab" data-section="sources" type="button">Источники</button>
       <button class="section-tab" data-section="telegram" type="button">Telegram</button>
+      <button class="section-tab" data-section="ai-sort" type="button">🤖 ИИ Сортировка</button>
+      <button class="section-tab" data-section="ai-chat" type="button">💬 ИИ Чат</button>
       <button class="section-tab" data-section="analytics" type="button">Аналитика</button>
     </nav>
 
@@ -120,6 +122,39 @@
           <p class="analytics-label">Каталожные источники</p>
           <p id="analyticsCatalogSources" class="analytics-value">0</p>
         </article>
+      </div>
+    </section>
+
+    <section class="vacancies section-panel hidden" data-panel="ai-sort">
+      <h2>🤖 ИИ Сортировка вакансий</h2>
+      <p class="ai-sort-desc">Gemini AI проанализирует вакансии и отсортирует по вашему критерию</p>
+      <div class="ai-sort-controls">
+        <input id="aiSortCriteria" type="text" placeholder="Критерий: напр. 'зарплата от 500к', 'junior frontend', 'удаленка в IT'...">
+        <select id="aiSortCity">
+          <option value="all">Любой город</option>
+        </select>
+        <select id="aiSortSpecialty">
+          <option value="all">Любая специальность</option>
+        </select>
+        <button id="aiSortBtn" type="button">🚀 Отсортировать</button>
+      </div>
+      <p id="aiSortStatus" class="status-line"></p>
+      <div id="aiSortResults" class="job-list"></div>
+      <p id="aiSortEmpty" class="empty hidden">Нажмите кнопку для ИИ-сортировки.</p>
+    </section>
+
+    <section class="vacancies section-panel hidden" data-panel="ai-chat">
+      <h2>💬 ИИ Ассистент</h2>
+      <p class="ai-chat-desc">Задайте вопрос о вакансиях, карьере или резюме — ИИ знает все текущие вакансии</p>
+      <div id="aiChatMessages" class="ai-chat-messages">
+        <div class="ai-chat-msg ai-msg-bot">
+          <div class="ai-msg-avatar">🤖</div>
+          <div class="ai-msg-text">Привет! Я ИИ-ассистент WorkFlow Jobs. Спросите меня о вакансиях, и я помогу найти подходящую работу. Например:<br>• "Найди вакансии frontend в Алматы"<br>• "Какая средняя зарплата для backend?"<br>• "Помоги составить резюме"</div>
+        </div>
+      </div>
+      <div class="ai-chat-input-row">
+        <input id="aiChatInput" type="text" placeholder="Напишите сообщение...">
+        <button id="aiChatSendBtn" type="button">Отправить</button>
       </div>
     </section>
   </main>

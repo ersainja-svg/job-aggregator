@@ -477,3 +477,221 @@ async function init() {
 }
 
 init();
+
+// ─── AI Sort ──────────────────────────────────────────────────────────────────
+const aiSortEls = {
+  criteria: document.querySelector("#aiSortCriteria"),
+  city: document.querySelector("#aiSortCity"),
+  specialty: document.querySelector("#aiSortSpecialty"),
+  btn: document.querySelector("#aiSortBtn"),
+  status: document.querySelector("#aiSortStatus"),
+  results: document.querySelector("#aiSortResults"),
+  empty: document.querySelector("#aiSortEmpty"),
+};
+
+function populateAiSortFilters() {
+  const cities = [...new Set(state.jobs.map((j) => String(j.city || "").trim()).filter(Boolean))].sort();
+  const specialties = [...new Set(state.jobs.map((j) => String(j.specialty || "Other").trim()).filter(Boolean))].sort();
+
+  aiSortEls.city.innerHTML = `<option value="all">Любой город</option>`;
+  for (const city of cities) {
+    const opt = document.createElement("option");
+    opt.value = city;
+    opt.textContent = city;
+    aiSortEls.city.appendChild(opt);
+  }
+
+  aiSortEls.specialty.innerHTML = `<option value="all">Любая специальность</option>`;
+  for (const sp of specialties) {
+    const opt = document.createElement("option");
+    opt.value = sp;
+    opt.textContent = sp;
+    aiSortEls.specialty.appendChild(opt);
+  }
+}
+
+function buildAiJobCard(job) {
+  const node = els.cardTpl.content.cloneNode(true);
+  const source = getSourceById(job.sourceId);
+  node.querySelector(".job-title").textContent = job.title;
+  node.querySelector(".job-source").textContent = source ? source.name : "Источник неизвестен";
+  node.querySelector(".job-company").textContent = `Компания: ${job.company}`;
+  node.querySelector(".job-location").textContent = `Регион: ${job.region || job.location || "Не указан"}`;
+  node.querySelector(".job-description").textContent = job.description;
+  node.querySelector(".job-date").textContent = `Опубликовано: ${formatDate(job.postedAt)}`;
+  const link = node.querySelector(".job-link");
+  link.href = job.url;
+
+  const favoriteBtn = node.querySelector(".favorite-btn");
+  const fav = isFavorite(job.id);
+  favoriteBtn.textContent = fav ? "В избранном" : "В избранное";
+  favoriteBtn.classList.toggle("is-favorite", fav);
+  favoriteBtn.addEventListener("click", () => toggleFavorite(job.id));
+
+  const tagsContainer = node.querySelector(".job-tags");
+
+  // AI Score badge
+  if (job.aiScore) {
+    const badge = document.createElement("span");
+    badge.className = "ai-score-badge";
+    badge.textContent = `⭐ ${job.aiScore}/10`;
+    tagsContainer.appendChild(badge);
+  }
+
+  for (const tag of (job.tags || [])) {
+    const tagNode = document.createElement("span");
+    tagNode.className = "tag";
+    tagNode.textContent = tag;
+    tagsContainer.appendChild(tagNode);
+  }
+
+  // AI Reason
+  if (job.aiReason) {
+    const card = node.querySelector(".job-card");
+    const reason = document.createElement("p");
+    reason.className = "ai-reason";
+    reason.textContent = `💡 ${job.aiReason}`;
+    card.appendChild(reason);
+  }
+
+  return node;
+}
+
+async function runAiSort() {
+  aiSortEls.btn.disabled = true;
+  aiSortEls.btn.textContent = "⏳ Анализируем...";
+  aiSortEls.status.textContent = "Gemini AI анализирует вакансии...";
+  aiSortEls.results.innerHTML = "";
+  aiSortEls.empty.classList.add("hidden");
+
+  try {
+    const response = await fetch("/api/ai/sort", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        criteria: aiSortEls.criteria.value || undefined,
+        city: aiSortEls.city.value,
+        specialty: aiSortEls.specialty.value,
+        limit: 20,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.error) {
+      aiSortEls.status.textContent = `Ошибка: ${data.error}`;
+      return;
+    }
+
+    const sorted = data.sorted || [];
+    aiSortEls.status.textContent = `ИИ отсортировал ${sorted.length} вакансий из ${data.total || "?"}`;
+
+    if (!sorted.length) {
+      aiSortEls.empty.textContent = "ИИ не нашёл подходящих вакансий по вашему критерию.";
+      aiSortEls.empty.classList.remove("hidden");
+      return;
+    }
+
+    for (const job of sorted) {
+      aiSortEls.results.appendChild(buildAiJobCard(job));
+    }
+  } catch (error) {
+    aiSortEls.status.textContent = `Ошибка: ${error.message}`;
+  } finally {
+    aiSortEls.btn.disabled = false;
+    aiSortEls.btn.textContent = "🚀 Отсортировать";
+  }
+}
+
+aiSortEls.btn.addEventListener("click", runAiSort);
+aiSortEls.criteria.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") runAiSort();
+});
+
+// ─── AI Chat ──────────────────────────────────────────────────────────────────
+const aiChatEls = {
+  messages: document.querySelector("#aiChatMessages"),
+  input: document.querySelector("#aiChatInput"),
+  sendBtn: document.querySelector("#aiChatSendBtn"),
+};
+
+let chatSessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+function appendChatMsg(text, isUser) {
+  const msg = document.createElement("div");
+  msg.className = `ai-chat-msg ${isUser ? "ai-msg-user" : "ai-msg-bot"}`;
+
+  const avatar = document.createElement("div");
+  avatar.className = "ai-msg-avatar";
+  avatar.textContent = isUser ? "👤" : "🤖";
+
+  const bubble = document.createElement("div");
+  bubble.className = "ai-msg-text";
+  bubble.innerHTML = text.replace(/\n/g, "<br>");
+
+  msg.appendChild(avatar);
+  msg.appendChild(bubble);
+  aiChatEls.messages.appendChild(msg);
+  aiChatEls.messages.scrollTop = aiChatEls.messages.scrollHeight;
+  return msg;
+}
+
+function showTyping() {
+  const typing = document.createElement("div");
+  typing.className = "ai-chat-msg ai-msg-bot";
+  typing.id = "aiTypingIndicator";
+  typing.innerHTML = `<div class="ai-msg-avatar">🤖</div><div class="ai-msg-text ai-typing">ИИ думает...</div>`;
+  aiChatEls.messages.appendChild(typing);
+  aiChatEls.messages.scrollTop = aiChatEls.messages.scrollHeight;
+}
+
+function removeTyping() {
+  const el = document.querySelector("#aiTypingIndicator");
+  if (el) el.remove();
+}
+
+async function sendChatMessage() {
+  const text = aiChatEls.input.value.trim();
+  if (!text) return;
+
+  aiChatEls.input.value = "";
+  aiChatEls.sendBtn.disabled = true;
+  appendChatMsg(text, true);
+  showTyping();
+
+  try {
+    const response = await fetch("/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text, sessionId: chatSessionId }),
+    });
+
+    const data = await response.json();
+    removeTyping();
+
+    if (data.error) {
+      appendChatMsg(`❌ Ошибка: ${data.error}`, false);
+    } else {
+      appendChatMsg(data.reply, false);
+      if (data.sessionId) chatSessionId = data.sessionId;
+    }
+  } catch (error) {
+    removeTyping();
+    appendChatMsg(`❌ Ошибка сети: ${error.message}`, false);
+  } finally {
+    aiChatEls.sendBtn.disabled = false;
+    aiChatEls.input.focus();
+  }
+}
+
+aiChatEls.sendBtn.addEventListener("click", sendChatMessage);
+aiChatEls.input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendChatMessage();
+});
+
+// Populate AI sort filters after jobs load
+const _originalLoadJobs = loadJobs;
+loadJobs = async function () {
+  await _originalLoadJobs();
+  populateAiSortFilters();
+};
