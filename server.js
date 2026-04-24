@@ -48,6 +48,37 @@ function stripHtml(html) {
   return String(html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function deriveRegion(job) {
+  const sourceId = String(job.sourceId || "").toLowerCase();
+  const rawLocation = String(job.location || "").trim();
+  const text = `${rawLocation} ${job.description || ""}`.toLowerCase();
+
+  if (rawLocation) {
+    return rawLocation;
+  }
+  if (sourceId === "hh" || sourceId === "enbek" || sourceId === "rabota-nur" || sourceId === "olx-kz") {
+    return "Казахстан";
+  }
+  if (sourceId.startsWith("tg-")) {
+    return "Казахстан / Telegram";
+  }
+  if (text.includes("kz") || text.includes("казахстан")) {
+    return "Казахстан";
+  }
+  return "Иностранный / Remote";
+}
+
+function normalizeJobs(inputJobs) {
+  return inputJobs.map((job) => {
+    const region = deriveRegion(job);
+    return {
+      ...job,
+      location: region,
+      region,
+    };
+  });
+}
+
 function safeAbsoluteUrl(url, base) {
   try {
     return new URL(url, base).toString();
@@ -612,16 +643,17 @@ app.get("/api/jobs", async (req, res) => {
     ? jobs.filter((job) => inDateRange(job.postedAt, dateFromTs, dateToTs))
     : jobs;
   resultJobs.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+  const normalizedJobs = normalizeJobs(resultJobs);
 
-  let kzJobs = resultJobs.filter((job) => isKzJob(job));
+  let kzJobs = normalizedJobs.filter((job) => isKzJob(job));
   if (!kzJobs.length) {
     // Fallback: never leave KZ section empty if regional sources are temporarily blocked.
-    kzJobs = resultJobs.slice(0, 120);
+    kzJobs = normalizedJobs.slice(0, 120);
     errors.push("KZ fallback: региональные источники временно недоступны, показаны общие вакансии.");
   }
 
   res.json({
-    jobs: resultJobs,
+    jobs: normalizedJobs,
     kzJobs,
     sources: buildSources(),
     errors,

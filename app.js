@@ -146,7 +146,7 @@ function buildJobCard(job) {
   node.querySelector(".job-title").textContent = job.title;
   node.querySelector(".job-source").textContent = source ? source.name : "Источник неизвестен";
   node.querySelector(".job-company").textContent = `Компания: ${job.company}`;
-  node.querySelector(".job-location").textContent = `Локация: ${job.location}`;
+  node.querySelector(".job-location").textContent = `Регион: ${job.region || job.location || "Не указан"}`;
   node.querySelector(".job-description").textContent = job.description;
   node.querySelector(".job-date").textContent = `Опубликовано: ${formatDate(job.postedAt)}`;
   const link = node.querySelector(".job-link");
