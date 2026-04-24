@@ -67,8 +67,8 @@
       <button class="section-tab" data-section="foreign" type="button">Иностранные</button>
       <button class="section-tab" data-section="cities" type="button">Города KZ</button>
       <button class="section-tab" data-section="sources" type="button">Источники</button>
-      <button class="section-tab" data-section="telegram" type="button">Telegram</button>
       <button class="section-tab" data-section="analytics" type="button">Аналитика</button>
+      <button class="section-tab" data-section="cabinet" type="button">Личный кабинет</button>
     </nav>
 
     <section class="vacancies section-panel" data-panel="jobs">
@@ -134,10 +134,38 @@
           <p id="analyticsCatalogSources" class="analytics-value">0</p>
         </article>
       </div>
-    </section>
-
+    <section class="sources section-panel hidden" data-panel="cabinet">
+      <h2>Личный кабинет</h2>
+      <div class="cabinet-grid">
+        <article class="cabinet-card">
+          <h3>Опубликовать резюме</h3>
+          <form id="resumeForm" class="cabinet-form">
+            <input type="text" id="resumeName" placeholder="Ваше имя" required>
+            <input type="text" id="resumeSpecialty" placeholder="Специальность (например, Frontend)" required>
+            <input type="text" id="resumeExp" placeholder="Опыт работы (лет)" required>
+            <input type="number" id="resumeSalary" placeholder="Желаемая ЗП (в тенге)">
+            <textarea id="resumeSkills" placeholder="Навыки и о себе..." rows="4"></textarea>
+            <button type="submit">Опубликовать резюме</button>
+          </form>
+          <p id="resumeStatus" class="form-status"></p>
+        </article>
+        
+        <article class="cabinet-card">
+          <h3>Разместить вакансию</h3>
+          <form id="vacancyForm" class="cabinet-form">
+            <input type="text" id="vacCompany" placeholder="Название компании" required>
+            <input type="text" id="vacTitle" placeholder="Должность" required>
+            <input type="text" id="vacLocation" placeholder="Город (например, Алматы)" required>
+            <input type="number" id="vacSalary" placeholder="Зарплата от (в тенге)">
+            <textarea id="vacDescription" placeholder="Описание вакансии..." rows="4" required></textarea>
+            <input type="url" id="vacUrl" placeholder="Ссылка для отклика (t.me/... или email)" required>
+            <button type="submit">Опубликовать вакансию</button>
+          </form>
+          <p id="vacancyStatus" class="form-status"></p>
+        </article>
       </div>
     </section>
+
   </main>
 
   <template id="jobCardTemplate">

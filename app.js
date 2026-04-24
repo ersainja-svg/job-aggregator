@@ -573,3 +573,9 @@ async function init() {
 init();
 
 // AI features removed per user request.
+
+
+// Cabinet logic
+const resForm=document.querySelector('#resumeForm'); const vacForm=document.querySelector('#vacancyForm'); const rsStatus=document.querySelector('#resumeStatus'); const vacStatus=document.querySelector('#vacancyStatus');
+if(resForm){ resForm.addEventListener('submit', async(e)=>{ e.preventDefault(); try{ const res=await fetch('/api/cabinet/resume', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({name:document.getElementById('resumeName').value, specialty:document.getElementById('resumeSpecialty').value, experience:document.getElementById('resumeExp').value, salary:document.getElementById('resumeSalary').value, skills:document.getElementById('resumeSkills').value})}); if(res.ok) { rsStatus.textContent='Резюме опубликовано!'; rsStatus.className='form-status show'; resForm.reset(); setTimeout(()=>rsStatus.className='form-status',3000); } else throw new Error(); }catch(e){ rsStatus.textContent='Ошибка'; rsStatus.className='form-status error show'; } }); }
+if(vacForm){ vacForm.addEventListener('submit', async(e)=>{ e.preventDefault(); try{ const res=await fetch('/api/cabinet/vacancy', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({company:document.getElementById('vacCompany').value, title:document.getElementById('vacTitle').value, location:document.getElementById('vacLocation').value, salary:document.getElementById('vacSalary').value, description:document.getElementById('vacDescription').value, url:document.getElementById('vacUrl').value})}); if(res.ok) { vacStatus.textContent='Вакансия опубликована!'; vacStatus.className='form-status show'; vacForm.reset(); setTimeout(()=>vacStatus.className='form-status',3000); document.getElementById('refreshBtn').click(); } else throw new Error(); }catch(e){ vacStatus.textContent='Ошибка'; vacStatus.className='form-status error show'; } }); }

@@ -113,6 +113,11 @@ try {
       specialties: s.specialties || (s.specialty ? [s.specialty] : []),
       cities: s.cities || [],
       favorites: s.favorites || [],
+      resume: s.resume || { skills: "", experience: "", salary: "" },
+      lang: s.lang || "ru",
+      digest: s.digest || "off",
+      salaryMin: s.salaryMin || 0,
+      salaryMax: s.salaryMax || 0,
       createdAt: s.createdAt || new Date().toISOString(),
     }));
   }
@@ -127,7 +132,7 @@ function saveSubscriptions() {
 function getOrCreateUser(chatId) {
   let user = subscriptions.find((s) => s.chatId === chatId);
   if (!user) {
-    user = { chatId, specialties: [], cities: [], favorites: [], createdAt: new Date().toISOString() };
+    user = { chatId, specialties: [], cities: [], favorites: [], resume: { skills: "", experience: "", salary: "" }, lang: "ru", digest: "off", salaryMin: 0, salaryMax: 0, createdAt: new Date().toISOString() };
     subscriptions.push(user);
     saveSubscriptions();
   }
@@ -141,6 +146,21 @@ function getOrCreateUser(chatId) {
   if (!user.salaryMax) user.salaryMax = 0;
   return user;
 }
+
+// ─── Cabinet Data Persistence ───
+const RESUMES_FILE = path.join(__dirname, "resumes.json");
+const VACANCIES_FILE = path.join(__dirname, "vacancies.json");
+let customResumes = [];
+let customVacancies = [];
+
+try {
+  if (fs.existsSync(RESUMES_FILE)) customResumes = JSON.parse(fs.readFileSync(RESUMES_FILE, "utf-8"));
+  if (fs.existsSync(VACANCIES_FILE)) customVacancies = JSON.parse(fs.readFileSync(VACANCIES_FILE, "utf-8"));
+} catch(e) { console.error("Error loading cabinet data", e); }
+
+function saveResumes() { fs.writeFileSync(RESUMES_FILE, JSON.stringify(customResumes, null, 2)); }
+function saveVacancies() { fs.writeFileSync(VACANCIES_FILE, JSON.stringify(customVacancies, null, 2)); }
+
 
 
 // ─── Telegram Bot ───
@@ -1248,6 +1268,10 @@ async function fetchAndNormalizeAllJobs() {
   const resultJobs = useDateRange
     ? jobs.filter((job) => inDateRange(job.postedAt, dateFromTs, dateToTs))
     : jobs;
+  
+  // Add custom vacancies published via Cabinet
+  resultJobs.push(...customVacancies);
+  
   resultJobs.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
 
   const normalizedJobs = normalizeJobs(resultJobs);
@@ -1392,8 +1416,54 @@ setTimeout(sendDigests, 30000);
 setInterval(runBackgroundJobCheck, 15 * 60 * 1000);
 setTimeout(runBackgroundJobCheck, 5000);
 
+// ─── Cabinet API Endpoints ───
+app.post("/api/cabinet/resume", (req, res) => {
+  try {
+    const { name, specialty, experience, salary, skills } = req.body;
+    const newResume = {
+      id: "res-" + Date.now(),
+      name: name || "Аноним",
+      specialty: specialty || "Не указана",
+      experience: experience || "0",
+      salary: salary || "По договоренности",
+      skills: skills || "",
+      createdAt: new Date().toISOString()
+    };
+    customResumes.unshift(newResume);
+    saveResumes();
+    res.json({ success: true, resume: newResume });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
-
+app.post("/api/cabinet/vacancy", (req, res) => {
+  try {
+    const { company, title, location, salary, description, url } = req.body;
+    const newVacancy = {
+      id: "vac-" + Date.now(),
+      title: title || "Без названия",
+      company: company || "Частное лицо",
+      location: location || "Не указан",
+      description: description || "",
+      salary: salary || "",
+      url: url || "#",
+      type: "full-time",
+      sourceId: "custom",
+      tags: ["Cabinet"],
+      postedAt: new Date().toISOString()
+    };
+    customVacancies.unshift(newVacancy);
+    saveVacancies();
+    // Prepend to cache so it shows up instantly before the next background check
+    if (cachedJobs) {
+      cachedJobs.unshift(newVacancy);
+    }
+    res.json({ success: true, vacancy: newVacancy });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 app.get('/*all', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
