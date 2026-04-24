@@ -58,7 +58,7 @@ const KZ_LOCATION_KEYWORDS = [
 
 const state = {
   jobs: [],
-  kzJobs: [],
+
   search: "",
   sourceId: "all",
   type: "all",
@@ -77,7 +77,6 @@ const els = {
   citySmartFilter: document.querySelector("#citySmartFilter"),
   vacancyCount: document.querySelector("#vacancyCount"),
   jobList: document.querySelector("#jobList"),
-  kzJobList: document.querySelector("#kzJobList"),
   favoriteJobList: document.querySelector("#favoriteJobList"),
   remoteJobList: document.querySelector("#remoteJobList"),
   foreignJobList: document.querySelector("#foreignJobList"),
@@ -85,7 +84,6 @@ const els = {
   telegramJobList: document.querySelector("#telegramJobList"),
   sourceList: document.querySelector("#sourceList"),
   emptyState: document.querySelector("#emptyState"),
-  kzEmptyState: document.querySelector("#kzEmptyState"),
   favoriteEmptyState: document.querySelector("#favoriteEmptyState"),
   remoteEmptyState: document.querySelector("#remoteEmptyState"),
   foreignEmptyState: document.querySelector("#foreignEmptyState"),
@@ -321,23 +319,6 @@ function renderRemoteJobs() {
   renderJobCollection(els.remoteJobList, els.remoteEmptyState, remoteJobs, "Удаленных вакансий не найдено.");
 }
 
-function renderKzJobs() {
-  const kzJobsSource = state.kzJobs.length ? state.kzJobs : state.jobs;
-  const kzJobs = kzJobsSource
-    .filter((job) => {
-      const sourceId = String(job.sourceId || "").toLowerCase();
-      if (sourceId === "hh" || sourceId === "enbek" || sourceId === "rabota-nur" || sourceId === "olx-kz") {
-        return true;
-      }
-      if (sourceId.startsWith("tg-")) {
-        return true;
-      }
-      const text = `${job.location || ""} ${job.description || ""}`.toLowerCase();
-      return KZ_LOCATION_KEYWORDS.some((keyword) => text.includes(keyword));
-    })
-    .sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
-  renderJobCollection(els.kzJobList, els.kzEmptyState, kzJobs, "Вакансий по Казахстану не найдено.");
-}
 
 function renderForeignJobs() {
   const foreignJobs = state.jobs
@@ -374,7 +355,7 @@ function renderCityJobs() {
 
 function renderAllJobSections() {
   renderJobs();
-  renderKzJobs();
+
   renderFavoriteJobs();
   renderRemoteJobs();
   renderForeignJobs();
@@ -418,7 +399,7 @@ async function loadJobs() {
   }
   const payload = await response.json();
   state.jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
-  state.kzJobs = Array.isArray(payload.kzJobs) ? payload.kzJobs : [];
+
   sources = Array.isArray(payload.sources) ? payload.sources : [];
 
   const parts = [];

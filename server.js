@@ -264,16 +264,27 @@ function detectSpecialtyAI(job) {
 function deriveRegion(job) {
   const sourceId = String(job.sourceId || "").toLowerCase();
   const rawLocation = String(job.location || "").trim();
-  const text = `${rawLocation} ${job.description || ""}`.toLowerCase();
+  const text = `${rawLocation} ${job.title || ""} ${job.description || ""}`.toLowerCase();
 
+  // Try to detect specific KZ city from any text
+  const detectedCity = detectCityAI(job);
+
+  if (rawLocation && detectedCity) {
+    return detectedCity;
+  }
   if (rawLocation) {
     return rawLocation;
+  }
+  if (detectedCity) {
+    return detectedCity;
   }
   if (sourceId === "hh" || sourceId === "enbek" || sourceId === "rabota-nur" || sourceId === "olx-kz") {
     return "Казахстан";
   }
   if (sourceId.startsWith("tg-")) {
-    return "Казахстан / Telegram";
+    // Extract city from channel name via TELEGRAM_CHANNEL_CITY_MAP
+    const channelName = sourceId.replace(/^tg-public-/, "").replace(/^tg-/, "");
+    return TELEGRAM_CHANNEL_CITY_MAP[channelName] || "Казахстан";
   }
   if (text.includes("kz") || text.includes("казахстан")) {
     return "Казахстан";
