@@ -1009,29 +1009,11 @@ async function runBackgroundJobCheck() {
 setInterval(runBackgroundJobCheck, 15 * 60 * 1000);
 setTimeout(runBackgroundJobCheck, 5000);
 
-Ответь строго JSON-массивом (без markdown) из объектов: [{"index": <номер вакансии>, "score": <1-10>, "reason": "<краткое обоснование на русском, 1 предложение>"}]
-Отсортируй по убыванию score. Верни максимум ${maxJobs} записей.`;
-
-    const response = await aiClient.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-    });
-
-    let text = response.text.trim();
-    // Clean markdown code fences if present
-    text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
-
-    let ranked;
-    try {
-      ranked = JSON.parse(text);
-    } catch (_e) {
-      return res.json({ sorted: sample.slice(0, maxJobs), aiRaw: text });
-    }
 
 app.get('/*all', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.listen(PORT, () => {
-  console.log(WorkFlow Jobs server started on http://localhost:);
+  console.log(`WorkFlow Jobs server started on http://localhost:${PORT}`);
 });

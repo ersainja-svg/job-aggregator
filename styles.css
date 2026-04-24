@@ -89,8 +89,16 @@ h3 {
 
 .controls {
   display: grid;
-  grid-template-columns: 1.8fr 1fr 1fr 1fr 1fr;
+  grid-template-columns: 1.5fr repeat(3, 1fr);
+  grid-template-rows: auto auto;
   gap: 0.7rem;
+}
+
+@media (min-width: 1000px) {
+  .controls {
+    grid-template-columns: 1.2fr repeat(6, 1fr);
+    grid-template-rows: auto;
+  }
 }
 
 input,
@@ -483,179 +491,4 @@ main {
   color: #a8b2d1;
 }
 
-/* ─── AI Sort ──────────────────────────────────────────────────────── */
-[data-panel="ai-sort"] h2 { color: #a8ffc8; }
-[data-panel="ai-chat"] h2 { color: #ffc46b; }
-
-.ai-sort-desc,
-.ai-chat-desc {
-  color: var(--muted);
-  margin: 0.4rem 0 1rem;
-}
-
-.ai-sort-controls {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr auto;
-  gap: 0.7rem;
-  margin-bottom: 0.8rem;
-}
-
-#aiSortBtn {
-  background: linear-gradient(135deg, rgba(108, 224, 255, 0.25), rgba(140, 88, 255, 0.25));
-  border-color: rgba(108, 224, 255, 0.5);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-#aiSortBtn:hover {
-  background: linear-gradient(135deg, rgba(108, 224, 255, 0.4), rgba(140, 88, 255, 0.4));
-}
-
-.ai-score-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.25rem 0.6rem;
-  border-radius: 999px;
-  font-size: 0.82rem;
-  font-weight: 700;
-  background: linear-gradient(135deg, rgba(126, 231, 135, 0.2), rgba(108, 224, 255, 0.2));
-  border: 1px solid rgba(126, 231, 135, 0.3);
-  color: var(--ok);
-}
-
-.ai-reason {
-  color: var(--accent);
-  font-size: 0.88rem;
-  margin: 0.3rem 0 0;
-  font-style: italic;
-}
-
-/* ─── AI Chat ──────────────────────────────────────────────────────── */
-.ai-chat-messages {
-  max-height: 500px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-  padding: 0.8rem;
-  background: rgba(10, 14, 30, 0.5);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  margin-bottom: 0.8rem;
-  scroll-behavior: smooth;
-}
-
-.ai-chat-messages::-webkit-scrollbar {
-  width: 6px;
-}
-
-.ai-chat-messages::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.ai-chat-messages::-webkit-scrollbar-thumb {
-  background: rgba(108, 224, 255, 0.2);
-  border-radius: 999px;
-}
-
-.ai-chat-msg {
-  display: flex;
-  gap: 0.6rem;
-  max-width: 85%;
-  animation: msgIn 200ms ease;
-}
-
-@keyframes msgIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.ai-msg-bot {
-  align-self: flex-start;
-}
-
-.ai-msg-user {
-  align-self: flex-end;
-  flex-direction: row-reverse;
-}
-
-.ai-msg-avatar {
-  flex-shrink: 0;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
-  font-size: 1.1rem;
-}
-
-.ai-msg-text {
-  padding: 0.7rem 0.9rem;
-  border-radius: 12px;
-  line-height: 1.5;
-  font-size: 0.93rem;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.ai-msg-bot .ai-msg-text {
-  background: var(--surface-alt);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-top-left-radius: 3px;
-}
-
-.ai-msg-user .ai-msg-text {
-  background: linear-gradient(135deg, rgba(108, 224, 255, 0.2), rgba(90, 80, 255, 0.2));
-  border: 1px solid rgba(108, 224, 255, 0.3);
-  color: var(--text);
-  border-top-right-radius: 3px;
-}
-
-.ai-chat-input-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 0.7rem;
-}
-
-#aiChatSendBtn {
-  background: linear-gradient(135deg, rgba(255, 196, 107, 0.25), rgba(255, 140, 50, 0.25));
-  border-color: rgba(255, 196, 107, 0.5);
-  font-weight: 600;
-  white-space: nowrap;
-  padding: 0.7rem 1.2rem;
-}
-
-#aiChatSendBtn:hover {
-  background: linear-gradient(135deg, rgba(255, 196, 107, 0.4), rgba(255, 140, 50, 0.4));
-}
-
-.ai-typing {
-  color: var(--muted);
-  font-style: italic;
-  padding: 0.5rem 0.9rem;
-  animation: blink 1s infinite;
-}
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-@media (max-width: 900px) {
-  .ai-sort-controls {
-    grid-template-columns: 1fr;
-  }
-
-  .ai-chat-input-row {
-    grid-template-columns: 1fr;
-  }
-
-  .ai-chat-msg {
-    max-width: 95%;
-  }
-}
+/* AI features removed */
