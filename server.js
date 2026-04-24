@@ -134,6 +134,11 @@ function getOrCreateUser(chatId) {
   if (!user.specialties) user.specialties = [];
   if (!user.cities) user.cities = [];
   if (!user.favorites) user.favorites = [];
+  if (!user.resume) user.resume = { skills: "", experience: "", salary: "" };
+  if (!user.lang) user.lang = "ru";
+  if (!user.digest) user.digest = "off";
+  if (!user.salaryMin) user.salaryMin = 0;
+  if (!user.salaryMax) user.salaryMax = 0;
   return user;
 }
 
@@ -150,6 +155,8 @@ if (TELEGRAM_BOT_TOKEN) {
         [{ text: "\u{1F4CB} \u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u0438", callback_data: "m_spec" }, { text: "\u{1F3D9} \u0413\u043E\u0440\u043E\u0434\u0430", callback_data: "m_city" }],
         [{ text: "\u{1F50D} \u041F\u043E\u0438\u0441\u043A", callback_data: "m_search" }, { text: "\u2B50 \u0418\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435", callback_data: "m_fav" }],
         [{ text: "\u{1F464} \u041F\u0440\u043E\u0444\u0438\u043B\u044C", callback_data: "m_profile" }, { text: "\u{1F4CA} \u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430", callback_data: "m_stats" }],
+        [{ text: "📝 Резюме", callback_data: "m_resume" }, { text: "💰 ЗП фильтр", callback_data: "m_salary" }],
+        [{ text: "📨 Дайджест", callback_data: "m_digest" }, { text: "🤖 AI подбор", callback_data: "m_ai" }],
         [{ text: "\u2753 \u041F\u043E\u043C\u043E\u0449\u044C", callback_data: "m_help" }],
       ] }, parse_mode: "Markdown" };
     }
@@ -252,6 +259,33 @@ if (TELEGRAM_BOT_TOKEN) {
       bot.sendMessage(chatId, txt, { parse_mode: "Markdown", disable_web_page_preview: true, ...kb });
     }
 
+
+    // /resume
+    bot.onText(/\/resume\s+(skills|exp|salary)\s+(.+)/i, (msg, match) => {
+      const u = getOrCreateUser(msg.chat.id);
+      const field = match[1].toLowerCase();
+      const val = match[2].trim();
+      if (field === "skills") u.resume.skills = val;
+      else if (field === "exp") u.resume.experience = val;
+      else if (field === "salary") u.resume.salary = val;
+      saveSubscriptions();
+      const labels = { skills: "Навыки", exp: "Опыт", salary: "ЗП" };
+      bot.sendMessage(msg.chat.id, "✅ " + labels[field] + " обновлены: *" + val + "*", { parse_mode: "Markdown" });
+    });
+
+    // /salary
+    bot.onText(/\/salary\s+(\d+)\s*(\d*)/i, (msg, match) => {
+      const u = getOrCreateUser(msg.chat.id);
+      u.salaryMin = parseInt(match[1], 10) || 0;
+      u.salaryMax = parseInt(match[2], 10) || 0;
+      saveSubscriptions();
+      if (u.salaryMin === 0 && u.salaryMax === 0) {
+        bot.sendMessage(msg.chat.id, "💰 Фильтр зарплаты сброшен.");
+      } else {
+        bot.sendMessage(msg.chat.id, "💰 Фильтр ЗП: *" + u.salaryMin + " - " + u.salaryMax + " KZT*", { parse_mode: "Markdown" });
+      }
+    });
+
     // ── Callback queries ──
     bot.on("callback_query", async (cb) => {
       const chatId = cb.message.chat.id, msgId = cb.message.message_id, d = cb.data;
@@ -317,6 +351,80 @@ if (TELEGRAM_BOT_TOKEN) {
           await bot.editMessageText("\u{1F4D6} /start \u2014 \u043C\u0435\u043D\u044E\n/search \u2014 \u043F\u043E\u0438\u0441\u043A\n/profile \u2014 \u043F\u0440\u043E\u0444\u0438\u043B\u044C\n/stats \u2014 \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430",
             { chat_id: chatId, message_id: msgId,
               reply_markup: { inline_keyboard: [[{ text: "\u{1F519} \u041C\u0435\u043D\u044E", callback_data: "m_main" }]] } });
+
+        } else if (d === "m_resume") {
+          const u = getOrCreateUser(chatId);
+          const sk = u.resume.skills || "не указаны";
+          const ex = u.resume.experience || "не указан";
+          const sl = u.resume.salary || "не указана";
+          await bot.editMessageText(
+            "📝 *Ваше резюме*\n\n" +
+            "🔧 Навыки: " + sk + "\n" +
+            "💼 Опыт: " + ex + "\n" +
+            "💰 ЗП: " + sl + "\n\n" +
+            "Чтобы заполнить:\n" +
+            "/resume skills Python, React\n" +
+            "/resume exp 3 года\n" +
+            "/resume salary 500000 KZT",
+            { chat_id: chatId, message_id: msgId, parse_mode: "Markdown",
+              reply_markup: { inline_keyboard: [[{ text: "🗑 Сбросить", callback_data: "clr_resume" }, { text: "🔙 Меню", callback_data: "m_main" }]] } });
+
+        } else if (d === "clr_resume") {
+          getOrCreateUser(chatId).resume = { skills: "", experience: "", salary: "" };
+          saveSubscriptions();
+          await bot.editMessageText("📝 Резюме сброшено!",
+            { chat_id: chatId, message_id: msgId,
+              reply_markup: { inline_keyboard: [[{ text: "🔙 Меню", callback_data: "m_main" }]] } });
+
+        } else if (d === "m_salary") {
+          const u = getOrCreateUser(chatId);
+          const mn = u.salaryMin || 0, mx = u.salaryMax || 0;
+          const cur = mn || mx ? mn + " - " + mx + " KZT" : "не установлен";
+          await bot.editMessageText(
+            "💰 *Фильтр зарплаты*\n\n" +
+            "Текущий: " + cur + "\n\n" +
+            "Отправьте:\n/salary 200000 500000\nили /salary 0 для сброса",
+            { chat_id: chatId, message_id: msgId, parse_mode: "Markdown",
+              reply_markup: { inline_keyboard: [[{ text: "🔙 Меню", callback_data: "m_main" }]] } });
+
+        } else if (d === "m_digest") {
+          const u = getOrCreateUser(chatId);
+          const mode = u.digest || "off";
+          await bot.editMessageText(
+            "📨 *Дайджест вакансий*\n\nТекущий: *" + mode + "*\n\nВыберите:",
+            { chat_id: chatId, message_id: msgId, parse_mode: "Markdown",
+              reply_markup: { inline_keyboard: [
+                [{ text: (mode === "daily" ? "✅" : "⬜") + " Ежедневно", callback_data: "dig_daily" },
+                 { text: (mode === "weekly" ? "✅" : "⬜") + " Еженедельно", callback_data: "dig_weekly" }],
+                [{ text: (mode === "off" ? "✅" : "⬜") + " Выкл", callback_data: "dig_off" },
+                 { text: "🔙 Меню", callback_data: "m_main" }],
+              ] } });
+
+        } else if (d.startsWith("dig_")) {
+          const u = getOrCreateUser(chatId);
+          u.digest = d.slice(4); saveSubscriptions();
+          await bot.answerCallbackQuery(cb.id, { text: "📨 Дайджест: " + u.digest }); return;
+
+        } else if (d === "m_ai") {
+          const u = getOrCreateUser(chatId);
+          if (!u.resume.skills) {
+            await bot.editMessageText("🤖 *AI подбор*\n\nСначала заполните резюме!\n/resume skills Python, SQL",
+              { chat_id: chatId, message_id: msgId, parse_mode: "Markdown",
+                reply_markup: { inline_keyboard: [[{ text: "📝 Резюме", callback_data: "m_resume" }, { text: "🔙 Меню", callback_data: "m_main" }]] } });
+          } else {
+            const skills = u.resume.skills.toLowerCase().split(/[,;\s]+/).filter(Boolean);
+            const matched = cachedJobs.filter((j) => {
+              const jt = (j.title + " " + j.description + " " + (j.tags || []).join(" ")).toLowerCase();
+              return skills.some((sk) => jt.includes(sk));
+            }).slice(0, 5);
+            let txt = "🤖 *AI подбор:*\n🔧 " + u.resume.skills + "\n\n";
+            if (matched.length) {
+              for (const j of matched) txt += "▪️ *" + j.title + "*\n🏢 " + j.company + " · 📍 " + j.location + "\n[Открыть](" + j.url + ")\n\n";
+            } else txt += "Пока нет подходящих.";
+            await bot.editMessageText(txt,
+              { chat_id: chatId, message_id: msgId, parse_mode: "Markdown", disable_web_page_preview: true,
+                reply_markup: { inline_keyboard: [[{ text: "🔄 Обновить", callback_data: "m_ai" }, { text: "🔙 Меню", callback_data: "m_main" }]] } });
+          }
 
         // Toggle specialty
         } else if (d.startsWith("ts_")) {
@@ -1250,6 +1358,36 @@ async function runBackgroundJobCheck() {
     console.error("Background job check failed:", err.message);
   }
 }
+
+// ── Digest scheduler ──
+let lastDigestDay = new Date().getDate();
+let lastDigestWeek = Math.floor(Date.now() / (7*24*60*60*1000));
+
+async function sendDigests() {
+  if (!bot || !cachedJobs.length) return;
+  const today = new Date().getDate();
+  const week = Math.floor(Date.now() / (7*24*60*60*1000));
+  for (const sub of subscriptions) {
+    if (!sub.digest || sub.digest === "off") continue;
+    const doDaily = sub.digest === "daily" && today !== lastDigestDay;
+    const doWeekly = sub.digest === "weekly" && week !== lastDigestWeek;
+    if (!doDaily && !doWeekly) continue;
+    let jobs = cachedJobs;
+    if (sub.specialties && sub.specialties.length && !sub.specialties.includes("All"))
+      jobs = jobs.filter(j => sub.specialties.some(s => s.toLowerCase() === (j.specialty||"").toLowerCase()));
+    if (sub.cities && sub.cities.length)
+      jobs = jobs.filter(j => sub.cities.some(c => (j.location||"").toLowerCase().includes(c.toLowerCase())));
+    const top = jobs.slice(0, 5);
+    if (!top.length) continue;
+    let txt = "📨 *" + (doDaily ? "Ежедневный" : "Еженедельный") + " дайджест*\n\n";
+    for (const j of top) txt += "▪️ *" + j.title + "*\n🏢 " + j.company + " · 📍 " + j.location + "\n[Открыть](" + j.url + ")\n\n";
+    bot.sendMessage(sub.chatId, txt, { parse_mode: "Markdown", disable_web_page_preview: true }).catch(e => console.error("Digest err:", e.message));
+  }
+  lastDigestDay = today;
+  lastDigestWeek = week;
+}
+setInterval(sendDigests, 60*60*1000);
+setTimeout(sendDigests, 30000);
 
 setInterval(runBackgroundJobCheck, 15 * 60 * 1000);
 setTimeout(runBackgroundJobCheck, 5000);
