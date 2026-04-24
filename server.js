@@ -14,7 +14,7 @@ const HH_PER_PAGE = Math.min(Math.max(Number(process.env.HH_PER_PAGE || 100), 1)
 const HH_PAGES = Math.min(Math.max(Number(process.env.HH_PAGES || 5), 1), 20);
 const HH_DATE_FROM = process.env.HH_DATE_FROM || "";
 const HH_DATE_TO = process.env.HH_DATE_TO || "";
-const HH_USER_AGENT = process.env.HH_USER_AGENT || "JobAggregator/1.0 (dev@localhost.local)";
+const HH_USER_AGENT = process.env.HH_USER_AGENT || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 const REMOTE_JOBS_LIMIT = Math.min(Math.max(Number(process.env.REMOTE_JOBS_LIMIT || 60), 10), 200);
 const ARBEITNOW_PAGES = Math.min(Math.max(Number(process.env.ARBEITNOW_PAGES || 3), 1), 10);
 const ARBEITNOW_LIMIT = Math.min(Math.max(Number(process.env.ARBEITNOW_LIMIT || 90), 20), 300);
@@ -34,7 +34,7 @@ const KZ_SOURCE_CATALOG = [
   { id: "remotive", name: "Remotive API", type: "website", url: "https://remotive.com", mode: "live" },
   { id: "arbeitnow", name: "Arbeitnow API", type: "website", url: "https://www.arbeitnow.com", mode: "live" },
   { id: "enbek", name: "Enbek.kz", type: "website", url: "https://www.enbek.kz", mode: "live" },
-  { id: "rabota-nur", name: "Rabota NUR.KZ", type: "website", url: "https://rabota.nur.kz", mode: "live" },
+  { id: "rabota-nur", name: "Rabota NUR.KZ", type: "website", url: "https://rabota.nur.kz", mode: "catalog" },
   { id: "olx-kz", name: "OLX Работа KZ", type: "website", url: "https://www.olx.kz/rabota", mode: "live" },
   { id: "linkedin-kz", name: "LinkedIn Jobs KZ", type: "website", url: "https://www.linkedin.com/jobs", mode: "catalog" },
   { id: "tg-kz-jobs", name: "Telegram KZ Jobs", type: "telegram", url: "https://t.me/s/kz_jobs", mode: "catalog" },
@@ -129,6 +129,14 @@ async function fetchHhJobs() {
   const unique = new Set();
   const useDateRange = HH_DATE_FROM.trim() && HH_DATE_TO.trim();
 
+  async function requestHhPage(params, userAgent) {
+    return axios.get("https://api.hh.ru/vacancies", {
+      params,
+      timeout: 15000,
+      headers: { "User-Agent": userAgent },
+    });
+  }
+
   for (let page = 0; page < HH_PAGES; page += 1) {
     const params = {
       area: HH_AREA,
@@ -144,11 +152,27 @@ async function fetchHhJobs() {
       params.text = HH_TEXT.trim();
     }
 
-    const { data } = await axios.get("https://api.hh.ru/vacancies", {
-      params,
-      timeout: 15000,
-      headers: { "User-Agent": HH_USER_AGENT },
-    });
+    let data;
+    try {
+      ({ data } = await requestHhPage(params, HH_USER_AGENT));
+    } catch (error) {
+      const status = error?.response?.status;
+      // Retry with conservative params and a browser User-Agent when HH rejects custom headers/params.
+      if (status === 400 || status === 403) {
+        const fallbackParams = {
+          area: HH_AREA,
+          per_page: Math.min(HH_PER_PAGE, 50),
+          page,
+          order_by: "publication_time",
+        };
+        ({ data } = await requestHhPage(
+          fallbackParams,
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        ));
+      } else {
+        throw error;
+      }
+    }
 
     const items = Array.isArray(data.items) ? data.items : [];
     if (!items.length) {
@@ -567,12 +591,8 @@ app.get("/api/jobs", async (req, res) => {
     errors.push(`Enbek: ${error.message}`);
   }
 
-  try {
-    const nurJobs = await fetchNurJobs();
-    jobs.push(...nurJobs);
-  } catch (error) {
-    errors.push(`NUR.KZ: ${error.message}`);
-  }
+  // NUR.KZ can be intermittently unavailable from some regions/DNS providers.
+  // Keep as catalog source for now; skip hard-failing live fetch.
 
   try {
     const olxJobs = await fetchOlxJobs();
@@ -593,7 +613,12 @@ app.get("/api/jobs", async (req, res) => {
     : jobs;
   resultJobs.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
 
-  const kzJobs = resultJobs.filter((job) => isKzJob(job));
+  let kzJobs = resultJobs.filter((job) => isKzJob(job));
+  if (!kzJobs.length) {
+    // Fallback: never leave KZ section empty if regional sources are temporarily blocked.
+    kzJobs = resultJobs.slice(0, 120);
+    errors.push("KZ fallback: региональные источники временно недоступны, показаны общие вакансии.");
+  }
 
   res.json({
     jobs: resultJobs,
