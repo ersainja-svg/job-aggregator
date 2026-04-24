@@ -62,6 +62,8 @@ const state = {
   search: "",
   sourceId: "all",
   type: "all",
+  specialty: "all",
+  city: "all",
   activeSection: "jobs",
   selectedCity: "all",
   favorites: new Set(),
@@ -71,6 +73,8 @@ const els = {
   searchInput: document.querySelector("#searchInput"),
   sourceFilter: document.querySelector("#sourceFilter"),
   typeFilter: document.querySelector("#typeFilter"),
+  specialtyFilter: document.querySelector("#specialtyFilter"),
+  citySmartFilter: document.querySelector("#citySmartFilter"),
   vacancyCount: document.querySelector("#vacancyCount"),
   jobList: document.querySelector("#jobList"),
   kzJobList: document.querySelector("#kzJobList"),
@@ -213,6 +217,29 @@ function renderSources() {
   }
 }
 
+function populateSmartFilters() {
+  const specialties = [...new Set(state.jobs.map((job) => String(job.specialty || "Other").trim()).filter(Boolean))].sort();
+  const cities = [...new Set(state.jobs.map((job) => String(job.city || "").trim()).filter(Boolean))].sort();
+
+  els.specialtyFilter.innerHTML = `<option value="all">Любая специальность</option>`;
+  for (const specialty of specialties) {
+    const option = document.createElement("option");
+    option.value = specialty;
+    option.textContent = specialty;
+    option.selected = state.specialty === specialty;
+    els.specialtyFilter.appendChild(option);
+  }
+
+  els.citySmartFilter.innerHTML = `<option value="all">Любой город</option>`;
+  for (const city of cities) {
+    const option = document.createElement("option");
+    option.value = city;
+    option.textContent = city;
+    option.selected = state.city === city;
+    els.citySmartFilter.appendChild(option);
+  }
+}
+
 function renderCityFilterButtons() {
   els.cityFilters.innerHTML = "";
   const cities = ["all", ...KZ_CITIES];
@@ -237,12 +264,14 @@ function filterJobs() {
   return state.jobs.filter((job) => {
     const sourceMatch = state.sourceId === "all" || job.sourceId === state.sourceId;
     const typeMatch = state.type === "all" || job.type === state.type;
+    const specialtyMatch = state.specialty === "all" || String(job.specialty || "Other") === state.specialty;
+    const cityMatch = state.city === "all" || String(job.city || "") === state.city;
     const text = [job.title, job.company, job.location, job.tags.join(" "), job.description]
       .join(" ")
       .toLowerCase();
     const searchMatch = !query || text.includes(query);
 
-    return sourceMatch && typeMatch && searchMatch;
+    return sourceMatch && typeMatch && specialtyMatch && cityMatch && searchMatch;
   });
 }
 
@@ -390,6 +419,7 @@ async function loadJobs() {
   }
   els.statusLine.textContent = parts.join(" | ");
   renderSources();
+  populateSmartFilters();
   renderAllJobSections();
   renderAnalytics();
 }
@@ -407,6 +437,16 @@ function attachEvents() {
 
   els.typeFilter.addEventListener("change", (event) => {
     state.type = event.target.value;
+    renderAllJobSections();
+  });
+
+  els.specialtyFilter.addEventListener("change", (event) => {
+    state.specialty = event.target.value;
+    renderAllJobSections();
+  });
+
+  els.citySmartFilter.addEventListener("change", (event) => {
+    state.city = event.target.value;
     renderAllJobSections();
   });
 

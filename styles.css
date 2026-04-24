@@ -89,7 +89,7 @@ h3 {
 
 .controls {
   display: grid;
-  grid-template-columns: 1.8fr 1fr 1fr;
+  grid-template-columns: 1.8fr 1fr 1fr 1fr 1fr;
   gap: 0.7rem;
 }
 

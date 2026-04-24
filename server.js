@@ -107,6 +107,28 @@ function detectCityAI(job) {
   return null;
 }
 
+const SPECIALTY_PATTERNS = [
+  { specialty: "Backend", patterns: ["backend", "back-end", "java", "python", "golang", "node.js", "php", "django", "laravel", "spring"] },
+  { specialty: "Frontend", patterns: ["frontend", "front-end", "react", "vue", "angular", "javascript", "typescript", "html", "css"] },
+  { specialty: "Mobile", patterns: ["android", "ios", "flutter", "react native", "kotlin", "swift", "mobile"] },
+  { specialty: "Data / Analytics", patterns: ["data", "analyst", "analytics", "bi", "power bi", "tableau", "sql", "etl"] },
+  { specialty: "DevOps / SRE", patterns: ["devops", "sre", "kubernetes", "docker", "ci/cd", "terraform", "ansible"] },
+  { specialty: "QA / Testing", patterns: ["qa", "test", "testing", "manual tester", "automation"] },
+  { specialty: "Design", patterns: ["designer", "ux", "ui", "figma", "product design"] },
+  { specialty: "Marketing / Sales", patterns: ["marketing", "smm", "seo", "sales", "business development", "продаж"] },
+  { specialty: "Support / Operations", patterns: ["support", "оператор", "call center", "клиент", "operations"] },
+];
+
+function detectSpecialtyAI(job) {
+  const text = `${job.title || ""} ${job.description || ""} ${(job.tags || []).join(" ")}`.toLowerCase();
+  for (const rule of SPECIALTY_PATTERNS) {
+    if (rule.patterns.some((pattern) => text.includes(pattern))) {
+      return rule.specialty;
+    }
+  }
+  return "Other";
+}
+
 function deriveRegion(job) {
   const sourceId = String(job.sourceId || "").toLowerCase();
   const rawLocation = String(job.location || "").trim();
@@ -131,11 +153,13 @@ function normalizeJobs(inputJobs) {
   return inputJobs.map((job) => {
     const region = deriveRegion(job);
     const city = detectCityAI(job);
+    const specialty = detectSpecialtyAI(job);
     return {
       ...job,
       location: region,
       region,
       city: city || region,
+      specialty,
     };
   });
 }
