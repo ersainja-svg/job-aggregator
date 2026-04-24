@@ -10,63 +10,8 @@ const fs = require("fs");
 const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
-const { initDB, getDB } = require("./db");
-
 app.use(express.json());
 app.use(cors());
-
-// Global database instance
-let db;
-
-async function setupServer() {
-  await initDB();
-  db = getDB();
-
-  // Load existing job IDs to prevent duplicate processing
-  const existingIds = await db.all("SELECT id FROM jobs");
-  existingIds.forEach(row => seenJobIds.add(row.id));
-
-  // Migrate JSON data to DB if needed
-  await migrateJsonToDb();
-
-  app.listen(PORT, () => {
-    console.log(`WorkFlow Jobs server started on http://localhost:${PORT}`);
-  });
-}
-
-async function migrateJsonToDb() {
-  try {
-    const USERS_FILE = path.join(__dirname, "users.json");
-    const RESUMES_FILE = path.join(__dirname, "resumes.json");
-    const VACANCIES_FILE = path.join(__dirname, "vacancies.json");
-
-    if (fs.existsSync(USERS_FILE)) {
-      const users = JSON.parse(fs.readFileSync(USERS_FILE, "utf-8"));
-      for (const u of users) {
-        await db.run("INSERT OR IGNORE INTO users (email, password, createdAt) VALUES (?, ?, ?)", [u.email, u.password, u.createdAt || new Date().toISOString()]);
-      }
-    }
-    if (fs.existsSync(RESUMES_FILE)) {
-      const resumes = JSON.parse(fs.readFileSync(RESUMES_FILE, "utf-8"));
-      for (const r of resumes) {
-        const user = await db.get("SELECT id FROM users WHERE email = ?", [r.authorEmail || "unknown@example.com"]);
-        await db.run("INSERT INTO resumes (userId, name, specialty, experience, salary, skills, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)", 
-          [user ? user.id : null, r.name, r.specialty, r.experience, r.salary, r.skills, r.createdAt || new Date().toISOString()]);
-      }
-    }
-    if (fs.existsSync(VACANCIES_FILE)) {
-      const vacancies = JSON.parse(fs.readFileSync(VACANCIES_FILE, "utf-8"));
-      for (const v of vacancies) {
-        const user = await db.get("SELECT id FROM users WHERE email = ?", [v.authorEmail || "unknown@example.com"]);
-        await db.run("INSERT OR IGNORE INTO vacancies (id, userId, company, title, location, salary, description, url, postedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", 
-          [v.id, user ? user.id : null, v.company, v.title, v.location, v.salary, v.description, v.url, v.postedAt || new Date().toISOString()]);
-      }
-    }
-    console.log("Migration from JSON to SQLite completed.");
-  } catch (e) {
-    console.error("Migration error:", e);
-  }
-}
 
 const PORT = Number(process.env.PORT || 8080);
 const HH_AREA = process.env.HH_AREA || "113";
@@ -209,10 +154,25 @@ function getOrCreateUser(chatId) {
   return user;
 }
 
-async function getUserIdByToken(token) {
-  const session = await db.get("SELECT userId FROM sessions WHERE token = ? AND expiresAt > ?", [token, new Date().toISOString()]);
-  return session ? session.userId : null;
-}
+// ─── Cabinet Data & Auth Persistence ───
+const RESUMES_FILE = path.join(__dirname, "resumes.json");
+const VACANCIES_FILE = path.join(__dirname, "vacancies.json");
+const USERS_FILE = path.join(__dirname, "users.json");
+
+let customResumes = [];
+let customVacancies = [];
+let platformUsers = [];
+const activeSessions = new Map(); // token -> userId
+
+try {
+  if (fs.existsSync(RESUMES_FILE)) customResumes = JSON.parse(fs.readFileSync(RESUMES_FILE, "utf-8"));
+  if (fs.existsSync(VACANCIES_FILE)) customVacancies = JSON.parse(fs.readFileSync(VACANCIES_FILE, "utf-8"));
+  if (fs.existsSync(USERS_FILE)) platformUsers = JSON.parse(fs.readFileSync(USERS_FILE, "utf-8"));
+} catch(e) { console.error("Error loading cabinet data", e); }
+
+function saveResumes() { fs.writeFileSync(RESUMES_FILE, JSON.stringify(customResumes, null, 2)); }
+function saveVacancies() { fs.writeFileSync(VACANCIES_FILE, JSON.stringify(customVacancies, null, 2)); }
+function saveUsers() { fs.writeFileSync(USERS_FILE, JSON.stringify(platformUsers, null, 2)); }
 
 function hashPassword(password) {
   return crypto.createHash("sha256").update(password).digest("hex");
@@ -1401,33 +1361,13 @@ async function runBackgroundJobCheck() {
           if (!specMatch) return false;
 
           // Check city match (empty = all cities)
-    for (const job of normalized) {
-      if (!seenJobIds.has(job.id)) {
-        newlyAddedCount++;
-        seenJobIds.add(job.id);
-        
-        // Save to Database
-        await db.run(`INSERT OR REPLACE INTO jobs 
-          (id, sourceId, title, company, location, description, salary, url, type, postedAt, region, tags, specialty)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [job.id, job.sourceId, job.title, job.company, job.location, job.description, job.salary, job.url, job.type, job.postedAt, job.region, JSON.stringify(job.tags), job.specialty]
-        );
-
-        // Notify Telegram subscribers
-        const subscribers = subscriptions.filter((s) => {
-          if (!s.specialties || !s.specialties.length) return true;
-          const isAll = s.specialties.includes("All");
-          const specMatch = isAll || s.specialties.some(sp => sp.toLowerCase() === (job.specialty || "").toLowerCase());
-          if (!specMatch) return false;
-          
-          const jobCity = String(job.city || "").toLowerCase();
           if (!s.cities || !s.cities.length) return true;
           return s.cities.some((c) => jobCity.toLowerCase().includes(c.toLowerCase()));
         });
 
         for (const sub of subscribers) {
           const msg =
-            `\u{1F680} *\u041D\u043E\u0432\u0430\u044F \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u044F: ${job.specialty}*\n\n` +
+            `\u{1F680} *\u041D\u043E\u0432\u0430\u044F \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u044F: ${specialty}*\n\n` +
             `*${job.title}*\n` +
             `\u{1F3E2} ${job.company}\n` +
             `\u{1F4CD} ${job.location}\n` +
@@ -1446,7 +1386,15 @@ async function runBackgroundJobCheck() {
         }
       }
     }
-    console.log(`Background check: added ${newlyAddedCount} new jobs to DB.`);
+
+    // Trim seen IDs to prevent memory leaks
+    if (seenJobIds.size > 5000) {
+      const arr = Array.from(seenJobIds);
+      seenJobIds.clear();
+      for (let i = arr.length - 2000; i < arr.length; i++) {
+        if (arr[i]) seenJobIds.add(arr[i]);
+      }
+    }
   } catch (err) {
     console.error("Background job check failed:", err.message);
   }
@@ -1486,171 +1434,121 @@ setInterval(runBackgroundJobCheck, 15 * 60 * 1000);
 setTimeout(runBackgroundJobCheck, 5000);
 
 // ─── Auth API Endpoints ───
-app.post("/api/auth/register", async (req, res) => {
+app.post("/api/auth/register", (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email и пароль обязательны" });
     
-    const existing = await db.get("SELECT id FROM users WHERE email = ?", [email]);
-    if (existing) {
+    if (platformUsers.find(u => u.email === email)) {
       return res.status(400).json({ error: "Пользователь с таким email уже существует" });
     }
     
-    const passwordHash = hashPassword(password);
-    const result = await db.run("INSERT INTO users (email, password) VALUES (?, ?)", [email, passwordHash]);
-    const userId = result.lastID;
+    const newUser = {
+      id: "usr-" + Date.now(),
+      email,
+      passwordHash: hashPassword(password),
+      createdAt: new Date().toISOString()
+    };
+    platformUsers.push(newUser);
+    saveUsers();
     
     const token = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
-    await db.run("INSERT INTO sessions (token, userId, expiresAt) VALUES (?, ?, ?)", [token, userId, expiresAt]);
-    
-    res.json({ success: true, token, email });
+    activeSessions.set(token, newUser.id);
+    res.json({ success: true, token, email: newUser.email });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", (req, res) => {
   try {
     const { email, password } = req.body;
-    const user = await db.get("SELECT * FROM users WHERE email = ?", [email]);
-    if (!user || user.password !== hashPassword(password)) {
+    const user = platformUsers.find(u => u.email === email);
+    if (!user || user.passwordHash !== hashPassword(password)) {
       return res.status(401).json({ error: "Неверный email или пароль" });
     }
-    
     const token = crypto.randomBytes(32).toString("hex");
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    await db.run("INSERT INTO sessions (token, userId, expiresAt) VALUES (?, ?, ?)", [token, user.id, expiresAt]);
-    
+    activeSessions.set(token, user.id);
     res.json({ success: true, token, email: user.email });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post("/api/auth/logout", async (req, res) => {
+app.post("/api/auth/logout", (req, res) => {
   const token = req.headers.authorization?.split(" ")[1];
-  if (token) await db.run("DELETE FROM sessions WHERE token = ?", [token]);
+  if (token) activeSessions.delete(token);
   res.json({ success: true });
 });
 
 // Middleware for checking auth
-async function requireAuth(req, res, next) {
+function requireAuth(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Необходима авторизация" });
-  
-  const userId = await getUserIdByToken(token);
-  if (!userId) return res.status(401).json({ error: "Сессия истекла" });
-  
-  req.userId = userId;
+  if (!token || !activeSessions.has(token)) {
+    return res.status(401).json({ error: "Необходима авторизация" });
+  }
+  req.userId = activeSessions.get(token);
   next();
 }
 
-app.get("/api/resumes", async (req, res) => {
-  const resumes = await db.all("SELECT * FROM resumes ORDER BY createdAt DESC");
-  res.json({ resumes });
+app.get("/api/resumes", (req, res) => {
+  res.json({ resumes: customResumes });
 });
 
 // ─── Cabinet API Endpoints ───
-app.post("/api/cabinet/resume", requireAuth, async (req, res) => {
+app.post("/api/cabinet/resume", requireAuth, (req, res) => {
   try {
     const { name, specialty, experience, salary, skills } = req.body;
-    await db.run("INSERT INTO resumes (userId, name, specialty, experience, salary, skills) VALUES (?, ?, ?, ?, ?, ?)",
-      [req.userId, name, specialty, experience, salary, skills]);
-    res.json({ success: true });
+    const newResume = {
+      id: "res-" + Date.now(),
+      userId: req.userId,
+      name: name || "Аноним",
+      specialty: specialty || "Не указана",
+      experience: experience || "0",
+      salary: salary || "По договоренности",
+      skills: skills || "",
+      createdAt: new Date().toISOString()
+    };
+    customResumes.unshift(newResume);
+    saveResumes();
+    res.json({ success: true, resume: newResume });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post("/api/cabinet/vacancy", requireAuth, async (req, res) => {
+app.post("/api/cabinet/vacancy", requireAuth, (req, res) => {
   try {
     const { company, title, location, salary, description, url } = req.body;
-    const id = "vac-" + Date.now();
-    await db.run("INSERT INTO vacancies (id, userId, company, title, location, salary, description, url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [id, req.userId, company, title, location, salary, description, url]);
-    res.json({ success: true });
+    const newVacancy = {
+      id: "vac-" + Date.now(),
+      userId: req.userId,
+      title: title || "Без названия",
+      company: company || "Частное лицо",
+      location: location || "Не указан",
+      description: description || "",
+      salary: salary || "",
+      url: url || "#",
+      type: "full-time",
+      sourceId: "custom",
+      tags: ["Cabinet"],
+      postedAt: new Date().toISOString()
+    };
+    customVacancies.unshift(newVacancy);
+    saveVacancies();
+    // Prepend to cache so it shows up instantly before the next background check
+    if (cachedJobs) {
+      cachedJobs.unshift(newVacancy);
+    }
+    res.json({ success: true, vacancy: newVacancy });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
-
-// Application Endpoint
-app.post("/api/apply", requireAuth, async (req, res) => {
-  try {
-    const { jobId } = req.body;
-    await db.run("INSERT INTO applications (userId, jobId) VALUES (?, ?)", [req.userId, jobId]);
-    res.json({ success: true, message: "Отклик успешно отправлен" });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// Server-side filtering
-app.get("/api/jobs", async (req, res) => {
-  try {
-    const { search, sourceId, type, specialty, city, salaryMin, sort } = req.query;
-    
-    let query = `
-      SELECT * FROM (
-        SELECT id, sourceId, title, company, location, description, CAST(salary AS INTEGER) as salary, url, type, postedAt, tags, specialty FROM jobs
-        UNION ALL
-        SELECT id, 'custom' as sourceId, title, company, location, salary, description, url, 'full-time' as type, postedAt, '[]' as tags, 'Direct' as specialty FROM vacancies
-      ) AS all_jobs
-      WHERE 1=1
-    `;
-    const params = [];
-
-    if (search) {
-      query += ` AND (title LIKE ? OR company LIKE ? OR description LIKE ?)`;
-      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
-    }
-    if (sourceId && sourceId !== "all") {
-      query += ` AND sourceId = ?`;
-      params.push(sourceId);
-    }
-    if (type && type !== "all") {
-      query += ` AND type = ?`;
-      params.push(type);
-    }
-    if (specialty && specialty !== "all") {
-      query += ` AND specialty = ?`;
-      params.push(specialty);
-    }
-    if (city && city !== "all") {
-      query += ` AND (location LIKE ? OR region LIKE ?)`;
-      params.push(`%${city}%`, `%${city}%`);
-    }
-    if (salaryMin && salaryMin !== "all") {
-      query += ` AND salary >= ?`;
-      params.push(Number(salaryMin));
-    }
-
-    if (sort === "newest") query += " ORDER BY postedAt DESC";
-    else if (sort === "oldest") query += " ORDER BY postedAt ASC";
-    else if (sort === "salary_desc") query += " ORDER BY salary DESC";
-    else if (sort === "salary_asc") query += " ORDER BY salary ASC";
-
-    const jobs = await db.all(query, params);
-    
-    // Convert tags back to array
-    jobs.forEach(j => {
-      try { j.tags = JSON.parse(j.tags || "[]"); } catch(e) { j.tags = []; }
-    });
-
-    res.json({ 
-      jobs, 
-      sources: KZ_SOURCE_CATALOG,
-      updatedAt: new Date().toISOString()
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 app.get('/*all', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Entry point
-setupServer();
+app.listen(PORT, () => {
+  console.log(`WorkFlow Jobs server started on http://localhost:${PORT}`);
+});
