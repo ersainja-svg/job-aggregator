@@ -999,7 +999,8 @@ async function runBackgroundJobCheck() {
       isFirstRun = false;
       console.log(`Initialized background check with ${seenJobIds.size} existing jobs.`);
 
-      // Асинхронный прогрев ИИ-кэша для первых 10 свежих вакансий
+      // Асинхронный прогрев ИИ-кэша временно отключен из-за лимитов бесплатного API Gemini (15 RPM)
+      /*
       if (aiClient) {
         (async () => {
           console.log("Started background AI categorization for initial jobs...");
@@ -1009,6 +1010,7 @@ async function runBackgroundJobCheck() {
           console.log("Finished background AI categorization.");
         })();
       }
+      */
 
       return;
     }
