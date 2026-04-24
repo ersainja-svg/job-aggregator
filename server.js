@@ -4,6 +4,7 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const path = require("path");
+const cheerio = require("cheerio");
 
 const app = express();
 const PORT = Number(process.env.PORT || 8080);
@@ -17,6 +18,9 @@ const HH_USER_AGENT = process.env.HH_USER_AGENT || "JobAggregator/1.0 (dev@local
 const REMOTE_JOBS_LIMIT = Math.min(Math.max(Number(process.env.REMOTE_JOBS_LIMIT || 60), 10), 200);
 const ARBEITNOW_PAGES = Math.min(Math.max(Number(process.env.ARBEITNOW_PAGES || 3), 1), 10);
 const ARBEITNOW_LIMIT = Math.min(Math.max(Number(process.env.ARBEITNOW_LIMIT || 90), 20), 300);
+const NUR_LIMIT = Math.min(Math.max(Number(process.env.NUR_LIMIT || 40), 10), 200);
+const OLX_LIMIT = Math.min(Math.max(Number(process.env.OLX_LIMIT || 40), 10), 200);
+const KZ_QUERY = process.env.KZ_QUERY || "Казахстан";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHANNELS = (process.env.TELEGRAM_CHANNELS || "")
   .split(",")
@@ -28,8 +32,8 @@ const KZ_SOURCE_CATALOG = [
   { id: "remotive", name: "Remotive API", type: "website", url: "https://remotive.com", mode: "live" },
   { id: "arbeitnow", name: "Arbeitnow API", type: "website", url: "https://www.arbeitnow.com", mode: "live" },
   { id: "enbek", name: "Enbek.kz", type: "website", url: "https://www.enbek.kz", mode: "catalog" },
-  { id: "rabota-nur", name: "Rabota NUR.KZ", type: "website", url: "https://rabota.nur.kz", mode: "catalog" },
-  { id: "olx-kz", name: "OLX Работа KZ", type: "website", url: "https://www.olx.kz/rabota", mode: "catalog" },
+  { id: "rabota-nur", name: "Rabota NUR.KZ", type: "website", url: "https://rabota.nur.kz", mode: "live" },
+  { id: "olx-kz", name: "OLX Работа KZ", type: "website", url: "https://www.olx.kz/rabota", mode: "live" },
   { id: "linkedin-kz", name: "LinkedIn Jobs KZ", type: "website", url: "https://www.linkedin.com/jobs", mode: "catalog" },
   { id: "tg-kz-jobs", name: "Telegram KZ Jobs", type: "telegram", url: "https://t.me/s/kz_jobs", mode: "catalog" },
 ];
@@ -40,6 +44,14 @@ app.use(express.static(path.join(__dirname)));
 
 function stripHtml(html) {
   return String(html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function safeAbsoluteUrl(url, base) {
+  try {
+    return new URL(url, base).toString();
+  } catch (_error) {
+    return base;
+  }
 }
 
 function detectType(text) {
@@ -240,6 +252,110 @@ async function fetchArbeitnowJobs() {
   return jobs;
 }
 
+async function fetchNurJobs() {
+  const { data } = await axios.get("https://rabota.nur.kz/search", {
+    params: { text: KZ_QUERY },
+    timeout: 15000,
+    headers: { "User-Agent": HH_USER_AGENT },
+  });
+  const $ = cheerio.load(String(data || ""));
+  const jobs = [];
+  const seen = new Set();
+
+  $("a[href*='/vacancy/'], a[href*='/job/']").each((_, node) => {
+    if (jobs.length >= NUR_LIMIT) {
+      return false;
+    }
+    const href = $(node).attr("href");
+    if (!href) {
+      return undefined;
+    }
+    const url = safeAbsoluteUrl(href, "https://rabota.nur.kz");
+    if (seen.has(url)) {
+      return undefined;
+    }
+    seen.add(url);
+
+    const title =
+      stripHtml($(node).text()) ||
+      stripHtml($(node).find("h2, h3, [class*=title]").first().text()) ||
+      "Вакансия NUR.KZ";
+    const card = $(node).closest("article, li, div");
+    const company = stripHtml(card.find("[class*=company], [data-qa*=company]").first().text()) || "Не указана";
+    const location = stripHtml(card.find("[class*=city], [class*=location], [data-qa*=address]").first().text()) || "Казахстан";
+    const description =
+      stripHtml(card.find("[class*=description], [class*=snippet], p").first().text()).slice(0, 350) ||
+      "Вакансия с Rabota NUR.KZ";
+
+    jobs.push({
+      id: `nur-${Buffer.from(url).toString("base64").slice(0, 20)}`,
+      title: title.slice(0, 120),
+      company,
+      location,
+      type: detectType(`${title} ${description}`),
+      sourceId: "rabota-nur",
+      tags: ["kz", "nur.kz", "local"],
+      postedAt: new Date().toISOString(),
+      description,
+      url,
+    });
+    return undefined;
+  });
+
+  return jobs;
+}
+
+async function fetchOlxJobs() {
+  const { data } = await axios.get("https://www.olx.kz/rabota/", {
+    timeout: 15000,
+    headers: { "User-Agent": HH_USER_AGENT },
+  });
+  const $ = cheerio.load(String(data || ""));
+  const jobs = [];
+  const seen = new Set();
+
+  $("a[href*='/d/obyavlenie/'], a[href*='/ads/job/']").each((_, node) => {
+    if (jobs.length >= OLX_LIMIT) {
+      return false;
+    }
+    const href = $(node).attr("href");
+    if (!href) {
+      return undefined;
+    }
+    const url = safeAbsoluteUrl(href, "https://www.olx.kz");
+    if (seen.has(url)) {
+      return undefined;
+    }
+    seen.add(url);
+
+    const card = $(node).closest("div[data-cy=l-card], article, li, div");
+    const title =
+      stripHtml($(node).find("h4, h5, [data-cy=l-card-title]").first().text()) ||
+      stripHtml($(node).text()) ||
+      "Вакансия OLX";
+    const location =
+      stripHtml(card.find("[data-testid=location-date], [data-cy=l-card-location], [class*=location]").first().text()) ||
+      "Казахстан";
+    const description = stripHtml(card.find("p, [data-testid=ad-description]").first().text()).slice(0, 350) || "Вакансия с OLX KZ";
+
+    jobs.push({
+      id: `olx-${Buffer.from(url).toString("base64").slice(0, 20)}`,
+      title: title.slice(0, 120),
+      company: "OLX работодатель",
+      location,
+      type: detectType(`${title} ${description}`),
+      sourceId: "olx-kz",
+      tags: ["kz", "olx", "local"],
+      postedAt: new Date().toISOString(),
+      description,
+      url,
+    });
+    return undefined;
+  });
+
+  return jobs;
+}
+
 function buildSources() {
   const base = KZ_SOURCE_CATALOG.map((source) => {
     if (source.id === "hh") {
@@ -269,6 +385,26 @@ function buildSources() {
         type: source.type,
         url: source.url,
         note: `Global API: до ${ARBEITNOW_LIMIT} вакансий (${ARBEITNOW_PAGES} стр.)`,
+        status: "live",
+      };
+    }
+    if (source.id === "rabota-nur") {
+      return {
+        id: source.id,
+        name: source.name,
+        type: source.type,
+        url: source.url,
+        note: `NUR.KZ scraper: до ${NUR_LIMIT} вакансий`,
+        status: "live",
+      };
+    }
+    if (source.id === "olx-kz") {
+      return {
+        id: source.id,
+        name: source.name,
+        type: source.type,
+        url: source.url,
+        note: `OLX scraper: до ${OLX_LIMIT} вакансий`,
         status: "live",
       };
     }
@@ -325,6 +461,20 @@ app.get("/api/jobs", async (req, res) => {
     jobs.push(...arbeitnowJobs);
   } catch (error) {
     errors.push(`Arbeitnow: ${error.message}`);
+  }
+
+  try {
+    const nurJobs = await fetchNurJobs();
+    jobs.push(...nurJobs);
+  } catch (error) {
+    errors.push(`NUR.KZ: ${error.message}`);
+  }
+
+  try {
+    const olxJobs = await fetchOlxJobs();
+    jobs.push(...olxJobs);
+  } catch (error) {
+    errors.push(`OLX: ${error.message}`);
   }
 
   try {
