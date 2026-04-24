@@ -32,7 +32,70 @@ const TELEGRAM_CHANNELS = (process.env.TELEGRAM_CHANNELS || "")
   .map((item) => item.trim().replace(/^@/, ""))
   .filter(Boolean);
 const TELEGRAM_LIMIT_PER_CHANNEL = Number(process.env.TELEGRAM_LIMIT_PER_CHANNEL || 20);
-const TELEGRAM_PUBLIC_CHANNELS = (process.env.TELEGRAM_PUBLIC_CHANNELS || "rabotaaktau,kz_jobs")
+const TELEGRAM_CHANNEL_CITY_MAP = {
+  // Алматы
+  almaty_rabota: "Алматы",
+  rabota_v_almaty: "Алматы",
+  // Астана
+  astana_rabota: "Астана",
+  rabota_astana_kz: "Астана",
+  // Шымкент
+  shymkent_rabota: "Шымкент",
+  zhumys_shymkent: "Шымкент",
+  // Актау / Мангистау
+  rabotaaktau: "Актау",
+  aktau_rabota_7: "Актау",
+  // Актобе
+  aktobe_job: "Актобе",
+  aktobe_rabota: "Актобе",
+  // Атырау
+  atyrau_rabota_1: "Атырау",
+  atyrau_job: "Атырау",
+  // Караганда / Темиртау
+  karaganda_rabota: "Караганда",
+  rabota_krg: "Караганда",
+  // Павлодар / Экибастуз
+  pavlodar_work: "Павлодар",
+  pvl_rabota: "Павлодар",
+  // Костанай / Рудный
+  kostanay_rabota: "Костанай",
+  rabota_kst: "Костанай",
+  // Кокшетау / Степногорск
+  kokshe_rabota: "Кокшетау",
+  rabota_kokshetau: "Кокшетау",
+  // Петропавловск
+  petropavlovsk_job: "Петропавловск",
+  sko_rabota: "Петропавловск",
+  // Усть-Каменогорск / Семей
+  vko_rabota: "Усть-Каменогорск",
+  rabota_vko: "Усть-Каменогорск",
+  // Талдыкорган / Конаев
+  taldykorgan_rabota: "Талдыкорган",
+  rabota_taldyk: "Талдыкорган",
+  // Тараз
+  taraz_rabota: "Тараз",
+  zhumys_taraz: "Тараз",
+  // Туркестан
+  turkestan_zhumys: "Туркестан",
+  // Кызылорда
+  kyzylorda_rabota: "Кызылорда",
+  // Уральск / Аксай
+  uralsk_rabota: "Уральск",
+  zapad_job: "Уральск",
+  // Жезказган / Сатпаев
+  zhez_rabota: "Жезказган",
+  satpaev_rabota: "Жезказган",
+  // Балхаш
+  balhash_rabota: "Балхаш",
+  // Жанаозен / Кульсары
+  rabota_zhanaozen: "Жанаозен",
+  zhumys_oil: "Жанаозен",
+  // Общие
+  kz_jobs: "Казахстан",
+};
+
+const DEFAULT_PUBLIC_CHANNELS = Object.keys(TELEGRAM_CHANNEL_CITY_MAP).join(",");
+const TELEGRAM_PUBLIC_CHANNELS = (process.env.TELEGRAM_PUBLIC_CHANNELS || DEFAULT_PUBLIC_CHANNELS)
   .split(",")
   .map((item) => item.trim().replace(/^@/, ""))
   .filter(Boolean);
@@ -481,7 +544,7 @@ async function fetchTelegramPublicJobs() {
           id: `tg-public-${channel}-${msgId}`,
           title: text.split("\n")[0].slice(0, 120) || `Вакансия @${channel}`,
           company: `Telegram @${channel}`,
-          location: "Казахстан",
+          location: TELEGRAM_CHANNEL_CITY_MAP[channel] || "Казахстан",
           type: detectType(text),
           sourceId: `tg-public-${channel}`,
           tags: ["telegram", "kz", "public"],
