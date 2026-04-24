@@ -1,5 +1,45 @@
 let sources = [];
 const FAVORITES_STORAGE_KEY = "workflow_jobs_favorites";
+const KZ_CITIES = [
+  "Алматы",
+  "Астана",
+  "Шымкент",
+  "Актау",
+  "Актобе",
+  "Атырау",
+  "Караганда",
+  "Павлодар",
+  "Костанай",
+  "Кокшетау",
+  "Петропавловск",
+  "Усть-Каменогорск",
+  "Семей",
+  "Талдыкорган",
+  "Тараз",
+  "Туркестан",
+  "Кызылорда",
+  "Уральск",
+  "Жезказган",
+  "Экибастуз",
+  "Рудный",
+  "Темиртау",
+  "Жанаозен",
+  "Балхаш",
+  "Сатпаев",
+  "Конаев",
+  "Кульсары",
+  "Аксай",
+  "Степногорск",
+  "Риддер",
+  "Щучинск",
+  "Текели",
+  "Сарыагаш",
+  "Аркалык",
+  "Шу",
+  "Жаркент",
+  "Аягоз",
+  "Мангистау",
+];
 
 const state = {
   jobs: [],
@@ -36,7 +76,7 @@ const els = {
   analyticsLiveSources: document.querySelector("#analyticsLiveSources"),
   analyticsTelegramJobs: document.querySelector("#analyticsTelegramJobs"),
   analyticsCatalogSources: document.querySelector("#analyticsCatalogSources"),
-  cityFilters: document.querySelectorAll(".city-filter"),
+  cityFilters: document.querySelector("#cityFilters"),
 };
 
 function formatDate(isoDate) {
@@ -153,6 +193,25 @@ function renderSources() {
   }
 }
 
+function renderCityFilterButtons() {
+  els.cityFilters.innerHTML = "";
+  const cities = ["all", ...KZ_CITIES];
+  for (const city of cities) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "city-filter";
+    button.dataset.city = city;
+    button.textContent = city === "all" ? "Все города" : city;
+    button.classList.toggle("is-active", city === state.selectedCity);
+    button.addEventListener("click", () => {
+      state.selectedCity = city;
+      renderCityFilterButtons();
+      renderCityJobs();
+    });
+    els.cityFilters.appendChild(button);
+  }
+}
+
 function filterJobs() {
   const query = state.search.trim().toLowerCase();
   return state.jobs.filter((job) => {
@@ -203,12 +262,18 @@ function renderRemoteJobs() {
 }
 
 function renderCityJobs() {
+  const cityAliasMap = {
+    Актау: ["актау", "aktau"],
+    Мангистау: ["мангистау", "мангыстау", "mangystau", "mangistau", "жанаозен", "zhanaozen"],
+  };
   const cityJobs = state.jobs
     .filter((job) => {
       if (state.selectedCity === "all") {
         return true;
       }
-      return String(job.location || "").toLowerCase().includes(state.selectedCity.toLowerCase());
+      const location = String(job.location || "").toLowerCase();
+      const aliases = cityAliasMap[state.selectedCity] || [String(state.selectedCity).toLowerCase()];
+      return aliases.some((alias) => location.includes(alias));
     })
     .sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
   renderJobCollection(els.cityJobList, els.cityEmptyState, cityJobs, "По выбранному городу вакансий нет.");
@@ -218,6 +283,7 @@ function renderAllJobSections() {
   renderJobs();
   renderFavoriteJobs();
   renderRemoteJobs();
+  renderCityFilterButtons();
   renderCityJobs();
   renderTelegramJobs();
 }
@@ -308,15 +374,6 @@ function attachEvents() {
     });
   }
 
-  for (const filter of els.cityFilters) {
-    filter.addEventListener("click", () => {
-      state.selectedCity = filter.dataset.city;
-      for (const item of els.cityFilters) {
-        item.classList.toggle("is-active", item.dataset.city === state.selectedCity);
-      }
-      renderCityJobs();
-    });
-  }
 }
 
 async function init() {
