@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { Search, LogIn, PlusCircle, MapPin, Briefcase, DollarSign } from 'lucide-react';
 
 const cities = [
@@ -49,10 +50,10 @@ export default function HomePage() {
               <span className="hidden sm:inline">Войти через Google</span>
               <span className="sm:hidden text-xs">Войти</span>
             </button>
-            <button className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.4)] transition-all text-sm font-bold text-white whitespace-nowrap">
+            <Link href="/jobs/create" className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.4)] transition-all text-sm font-bold text-white whitespace-nowrap">
               <PlusCircle className="w-4 h-4" />
               <span className="hidden sm:inline">Опубликовать</span>
-            </button>
+            </Link>
           </div>
         </div>
       </header>
