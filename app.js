@@ -67,6 +67,8 @@ const state = {
   activeSection: "jobs",
   selectedCity: "all",
   favorites: new Set(),
+  previousJobIds: new Set(),
+  isAutoRefresh: false,
 };
 
 const els = {
@@ -182,9 +184,19 @@ function renderJobCollection(targetList, targetEmptyState, jobs, emptyMessage) {
     return;
   }
   targetEmptyState.classList.add("hidden");
-  for (const job of jobs) {
-    targetList.appendChild(buildJobCard(job));
-  }
+  jobs.forEach((job, index) => {
+    const cardFragment = buildJobCard(job);
+    const card = cardFragment.querySelector(".job-card");
+    if (card) {
+      // Staggered animation delay
+      card.style.animationDelay = `${index * 0.04}s`;
+      // Mark new cards
+      if (state.isAutoRefresh && !state.previousJobIds.has(job.id)) {
+        card.classList.add("is-new");
+      }
+    }
+    targetList.appendChild(cardFragment);
+  });
 }
 
 function renderSources() {
@@ -398,22 +410,37 @@ async function loadJobs() {
     throw new Error(`API вернул статус ${response.status}`);
   }
   const payload = await response.json();
-  state.jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
 
+  // Track previous job IDs for new card detection
+  state.previousJobIds = new Set(state.jobs.map((j) => j.id));
+
+  const newJobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+  const newCount = state.previousJobIds.size > 0
+    ? newJobs.filter((j) => !state.previousJobIds.has(j.id)).length
+    : 0;
+
+  state.jobs = newJobs;
   sources = Array.isArray(payload.sources) ? payload.sources : [];
 
   const parts = [];
   if (payload.updatedAt) {
     parts.push(`Обновлено: ${formatDate(payload.updatedAt)}`);
   }
+  if (newCount > 0) {
+    parts.push(`+${newCount} новых`);
+  }
   if (Array.isArray(payload.errors) && payload.errors.length) {
     parts.push(`Ошибки источников: ${payload.errors.join("; ")}`);
   }
-  els.statusLine.textContent = parts.join(" | ");
+  els.statusLine.innerHTML = `<span class="live-indicator"><span class="live-dot"></span>LIVE</span> ` + parts.join(" | ");
+
   renderSources();
   populateSmartFilters();
   renderAllJobSections();
   renderAnalytics();
+
+  // After render, mark as auto-refresh for next cycle
+  state.isAutoRefresh = true;
 }
 
 function attachEvents() {
@@ -474,6 +501,15 @@ async function init() {
   } catch (error) {
     els.statusLine.textContent = `Ошибка загрузки: ${error.message}`;
   }
+
+  // Auto-refresh every 60 seconds
+  setInterval(async () => {
+    try {
+      await loadJobs();
+    } catch (_e) {
+      // Silently retry on next cycle
+    }
+  }, 60 * 1000);
 }
 
 init();
