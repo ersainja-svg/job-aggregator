@@ -4,11 +4,15 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const path = require("path");
+const crypto = require("crypto");
 const cheerio = require("cheerio");
 const fs = require("fs");
 const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
+app.use(express.json());
+app.use(cors());
+
 const PORT = Number(process.env.PORT || 8080);
 const HH_AREA = process.env.HH_AREA || "113";
 const HH_TEXT = process.env.HH_TEXT || "";
@@ -147,19 +151,29 @@ function getOrCreateUser(chatId) {
   return user;
 }
 
-// ─── Cabinet Data Persistence ───
+// ─── Cabinet Data & Auth Persistence ───
 const RESUMES_FILE = path.join(__dirname, "resumes.json");
 const VACANCIES_FILE = path.join(__dirname, "vacancies.json");
+const USERS_FILE = path.join(__dirname, "users.json");
+
 let customResumes = [];
 let customVacancies = [];
+let platformUsers = [];
+const activeSessions = new Map(); // token -> userId
 
 try {
   if (fs.existsSync(RESUMES_FILE)) customResumes = JSON.parse(fs.readFileSync(RESUMES_FILE, "utf-8"));
   if (fs.existsSync(VACANCIES_FILE)) customVacancies = JSON.parse(fs.readFileSync(VACANCIES_FILE, "utf-8"));
+  if (fs.existsSync(USERS_FILE)) platformUsers = JSON.parse(fs.readFileSync(USERS_FILE, "utf-8"));
 } catch(e) { console.error("Error loading cabinet data", e); }
 
 function saveResumes() { fs.writeFileSync(RESUMES_FILE, JSON.stringify(customResumes, null, 2)); }
 function saveVacancies() { fs.writeFileSync(VACANCIES_FILE, JSON.stringify(customVacancies, null, 2)); }
+function saveUsers() { fs.writeFileSync(USERS_FILE, JSON.stringify(platformUsers, null, 2)); }
+
+function hashPassword(password) {
+  return crypto.createHash("sha256").update(password).digest("hex");
+}
 
 
 
@@ -1416,12 +1430,71 @@ setTimeout(sendDigests, 30000);
 setInterval(runBackgroundJobCheck, 15 * 60 * 1000);
 setTimeout(runBackgroundJobCheck, 5000);
 
+// ─── Auth API Endpoints ───
+app.post("/api/auth/register", (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: "Email и пароль обязательны" });
+    
+    if (platformUsers.find(u => u.email === email)) {
+      return res.status(400).json({ error: "Пользователь с таким email уже существует" });
+    }
+    
+    const newUser = {
+      id: "usr-" + Date.now(),
+      email,
+      passwordHash: hashPassword(password),
+      createdAt: new Date().toISOString()
+    };
+    platformUsers.push(newUser);
+    saveUsers();
+    
+    const token = crypto.randomBytes(32).toString("hex");
+    activeSessions.set(token, newUser.id);
+    res.json({ success: true, token, email: newUser.email });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/auth/login", (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = platformUsers.find(u => u.email === email);
+    if (!user || user.passwordHash !== hashPassword(password)) {
+      return res.status(401).json({ error: "Неверный email или пароль" });
+    }
+    const token = crypto.randomBytes(32).toString("hex");
+    activeSessions.set(token, user.id);
+    res.json({ success: true, token, email: user.email });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (token) activeSessions.delete(token);
+  res.json({ success: true });
+});
+
+// Middleware for checking auth
+function requireAuth(req, res, next) {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token || !activeSessions.has(token)) {
+    return res.status(401).json({ error: "Необходима авторизация" });
+  }
+  req.userId = activeSessions.get(token);
+  next();
+}
+
 // ─── Cabinet API Endpoints ───
-app.post("/api/cabinet/resume", (req, res) => {
+app.post("/api/cabinet/resume", requireAuth, (req, res) => {
   try {
     const { name, specialty, experience, salary, skills } = req.body;
     const newResume = {
       id: "res-" + Date.now(),
+      userId: req.userId,
       name: name || "Аноним",
       specialty: specialty || "Не указана",
       experience: experience || "0",
@@ -1437,11 +1510,12 @@ app.post("/api/cabinet/resume", (req, res) => {
   }
 });
 
-app.post("/api/cabinet/vacancy", (req, res) => {
+app.post("/api/cabinet/vacancy", requireAuth, (req, res) => {
   try {
     const { company, title, location, salary, description, url } = req.body;
     const newVacancy = {
       id: "vac-" + Date.now(),
+      userId: req.userId,
       title: title || "Без названия",
       company: company || "Частное лицо",
       location: location || "Не указан",

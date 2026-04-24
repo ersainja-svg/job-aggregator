@@ -11,9 +11,15 @@
   <div class="bg-orb bg-orb-2"></div>
   <div class="bg-orb bg-orb-3"></div>
   <header class="hero">
-    <div class="container">
-      <h1>WorkFlow Jobs</h1>
-      <p>Все вакансии в одном месте: сайты, Telegram-каналы и другие источники.</p>
+    <div class="container hero-top">
+      <div>
+        <h1>WorkFlow Jobs</h1>
+        <p>Все вакансии в одном месте: сайты, Telegram-каналы и другие источники.</p>
+      </div>
+      <div id="authContainer" class="auth-container">
+        <button id="authBtn" type="button">Войти / Регистрация</button>
+      </div>
+    </div>
       <div class="controls">
         <input id="searchInput" type="search" placeholder="Поиск по должности, навыкам, компании...">
         <select id="sourceFilter">
@@ -188,6 +194,25 @@
     </article>
   </template>
 
+  <!-- Auth Modal -->
+  <div id="authModal" class="modal hidden">
+    <div class="modal-content">
+      <span class="close-modal">&times;</span>
+      <h2 id="authModalTitle">Вход</h2>
+      <form id="authForm" class="cabinet-form">
+        <input type="email" id="authEmail" placeholder="Email" required>
+        <input type="password" id="authPassword" placeholder="Пароль" required>
+        <button type="submit" id="authSubmitBtn">Войти</button>
+      </form>
+      <p id="authStatus" class="form-status"></p>
+      <p class="auth-toggle">
+        <span id="authToggleText">Нет аккаунта?</span> 
+        <a href="#" id="authToggleLink">Зарегистрироваться</a>
+      </p>
+    </div>
+  </div>
+
   <script src="./app.js"></script>
+  <script src="./auth.js"></script>
 </body>
 </html>
