@@ -58,6 +58,7 @@ const KZ_LOCATION_KEYWORDS = [
 
 const state = {
   jobs: [],
+  kzJobs: [],
   search: "",
   sourceId: "all",
   type: "all",
@@ -281,10 +282,11 @@ function renderRemoteJobs() {
 }
 
 function renderKzJobs() {
-  const kzJobs = state.jobs
+  const kzJobsSource = state.kzJobs.length ? state.kzJobs : state.jobs;
+  const kzJobs = kzJobsSource
     .filter((job) => {
       const sourceId = String(job.sourceId || "").toLowerCase();
-      if (sourceId === "hh" || sourceId === "rabota-nur" || sourceId === "olx-kz") {
+      if (sourceId === "hh" || sourceId === "enbek" || sourceId === "rabota-nur" || sourceId === "olx-kz") {
         return true;
       }
       if (sourceId.startsWith("tg-")) {
@@ -376,6 +378,7 @@ async function loadJobs() {
   }
   const payload = await response.json();
   state.jobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+  state.kzJobs = Array.isArray(payload.kzJobs) ? payload.kzJobs : [];
   sources = Array.isArray(payload.sources) ? payload.sources : [];
 
   const parts = [];
