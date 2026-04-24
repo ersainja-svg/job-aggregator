@@ -14,11 +14,7 @@ const KZ_CITY_ALIASES: Record<string, string[]> = {
   "Костанай": ["костанай", "kostanay"],
 };
 
-// Список твоих старых каналов из server.js
-const TELEGRAM_CHANNELS = [
-  "kz_jobs", "almaty_rabota", "astana_rabota", "shymkent_rabota", 
-  "rabotaaktau", "aktobe_job", "atyrau_rabota_1", "karaganda_rabota"
-];
+const TELEGRAM_CHANNELS = ["kz_jobs", "almaty_rabota", "astana_rabota", "shymkent_rabota", "rabotaaktau", "atyrau_rabota_1"];
 
 function detectCity(text: string): string {
   const lowText = text.toLowerCase();
@@ -29,56 +25,97 @@ function detectCity(text: string): string {
 }
 
 export async function GET() {
+  const allJobs: any[] = [];
+  const timeout = 8000; // 8 секунд на каждый источник
+
+  // --- 1. HEADHUNTER KZ ---
   try {
-    const allJobs: any[] = [];
+    const res = await axios.get('https://api.hh.ru/vacancies', {
+      params: { area: '113', per_page: 50 },
+      headers: { 'User-Agent': 'WorkKZ/1.0' },
+      timeout
+    });
+    const jobs = res.data.items.map((item: any) => ({
+      id: `hh-${item.id}`,
+      title: item.name,
+      company: item.employer?.name || "HH.kz",
+      salary: item.salary ? `${item.salary.from || ''} ${item.salary.currency}` : "З/П по договоренности",
+      city: detectCity(`${item.name} ${item.area?.name}`),
+      url: item.alternate_url,
+      source: "HeadHunter"
+    }));
+    allJobs.push(...jobs);
+  } catch (e) { console.error("HH Error"); }
 
-    // 1. ЗАГРУЗКА ИЗ HEADHUNTER
+  // --- 2. ENBEK.KZ ---
+  try {
+    const { data } = await axios.get('https://www.enbek.kz/ru/search/vacancy', { timeout });
+    const $ = cheerio.load(data);
+    $(".vacancy-item, .search-result-item").each((i, el) => {
+      if (i > 20) return;
+      const title = $(el).find("h2, h3, a[href*='/vacancy/']").first().text().trim();
+      const link = $(el).find("a[href*='/vacancy/']").first().attr("href");
+      if (title && link) {
+        allJobs.push({
+          id: `enbek-${i}-${Date.now()}`,
+          title,
+          company: "Enbek.kz",
+          salary: "Гос. оклад",
+          city: detectCity(title) || "Казахстан",
+          url: link.startsWith('http') ? link : `https://www.enbek.kz${link}`,
+          source: "Enbek.kz"
+        });
+      }
+    });
+  } catch (e) { console.error("Enbek Error"); }
+
+  // --- 3. OLX.KZ ---
+  try {
+    const { data } = await axios.get('https://www.olx.kz/rabota/', { timeout, headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const $ = cheerio.load(data);
+    $("div[data-cy='l-card']").each((i, el) => {
+      if (i > 15) return;
+      const title = $(el).find("h6").text().trim();
+      const link = $(el).find("a").attr("href");
+      if (title && link) {
+        allJobs.push({
+          id: `olx-${i}`,
+          title,
+          company: "Работодатель OLX",
+          salary: "См. на OLX",
+          city: detectCity(title),
+          url: link.startsWith('http') ? link : `https://www.olx.kz${link}`,
+          source: "OLX"
+        });
+      }
+    });
+  } catch (e) { console.error("OLX Error"); }
+
+  // --- 4. TELEGRAM ---
+  for (const channel of TELEGRAM_CHANNELS) {
     try {
-      const hhRes = await axios.get('https://api.hh.ru/vacancies', {
-        params: { area: '113', per_page: 50 },
-        headers: { 'User-Agent': 'WorkKZ/1.0' }
-      });
-      const hhJobs = hhRes.data.items.map((item: any) => ({
-        id: `hh-${item.id}`,
-        title: item.name,
-        company: item.employer?.name || "HeadHunter",
-        salary: item.salary ? `${item.salary.from || ''} ${item.salary.currency}` : "З/П по договоренности",
-        city: detectCity(`${item.name} ${item.area?.name}`),
-        url: item.alternate_url,
-        source: "HH.kz"
-      }));
-      allJobs.push(...hhJobs);
-    } catch (e) { console.error("HH Error"); }
-
-    // 2. ЗАГРУЗКА ИЗ TELEGRAM (Парсинг публичных каналов)
-    for (const channel of TELEGRAM_CHANNELS) {
-      try {
-        const { data } = await axios.get(`https://t.me/s/${channel}`, { timeout: 5000 });
-        const $ = cheerio.load(data);
-        
-        $(".tgme_widget_message_wrap").each((i, el) => {
-          if (i > 10) return; // Берем последние 10 сообщений
-          const text = $(el).find(".tgme_widget_message_text").text();
-          if (!text) return;
-          
-          const link = $(el).find("a.tgme_widget_message_date").attr("href");
-          
+      const { data } = await axios.get(`https://t.me/s/${channel}`, { timeout: 5000 });
+      const $ = cheerio.load(data);
+      $(".tgme_widget_message_wrap").each((i, el) => {
+        if (i > 5) return;
+        const text = $(el).find(".tgme_widget_message_text").text();
+        const link = $(el).find("a.tgme_widget_message_date").attr("href");
+        if (text && link) {
           allJobs.push({
             id: `tg-${channel}-${i}`,
-            title: text.split('\n')[0].slice(0, 100) || "Вакансия из Telegram",
+            title: text.split('\n')[0].slice(0, 80),
             company: `@${channel}`,
-            salary: "См. в описании",
-            city: detectCity(text) || "Казахстан",
-            url: link || `https://t.me/${channel}`,
+            salary: "В описании",
+            city: detectCity(text),
+            url: link,
             source: "Telegram"
           });
-        });
-      } catch (e) { console.error(`TG Error for ${channel}`); }
-    }
-
-    // Сортировка (сначала новые)
-    return NextResponse.json({ jobs: allJobs.slice(0, 150) });
-  } catch (error) {
-    return NextResponse.json({ jobs: [], error: "Server Error" }, { status: 500 });
+        }
+      });
+    } catch (e) { console.error(`TG Error ${channel}`); }
   }
+
+  // Удаляем дубликаты и перемешиваем (чтобы было разнообразие)
+  const uniqueJobs = Array.from(new Map(allJobs.map(j => [j.url, j])).values());
+  return NextResponse.json({ jobs: uniqueJobs.sort(() => Math.random() - 0.5) });
 }
