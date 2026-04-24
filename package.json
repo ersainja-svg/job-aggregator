@@ -1,28 +1,27 @@
 {
   "name": "job-aggregator",
-  "version": "1.0.0",
-  "description": "Простой сайт-агрегатор вакансий из разных источников: job-сайты, Telegram-каналы и другие платформы.",
-  "main": "server.js",
+  "version": "0.1.0",
+  "private": true,
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
-    "pm2": "pm2 start ecosystem.config.js",
-    "pm2:stop": "pm2 stop workflow-jobs",
-    "pm2:restart": "pm2 restart workflow-jobs",
-    "pm2:logs": "pm2 logs workflow-jobs",
-    "pm2:status": "pm2 status"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "axios": "^1.15.2",
-    "cheerio": "^1.2.0",
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "node-telegram-bot-api": "^0.67.0",
-    "pm2": "^6.0.14"
+    "lucide-react": "^1.11.0",
+    "next": "16.2.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.4",
+    "tailwindcss": "^4",
+    "typescript": "^5"
   }
 }
