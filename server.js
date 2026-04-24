@@ -5,6 +5,9 @@ const cors = require("cors");
 const axios = require("axios");
 const path = require("path");
 const cheerio = require("cheerio");
+const fs = require("fs");
+const TelegramBot = require("node-telegram-bot-api");
+const { GoogleGenAI } = require("@google/genai");
 
 const app = express();
 const PORT = Number(process.env.PORT || 8080);
@@ -37,6 +40,70 @@ const TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL = Math.min(
   Math.max(Number(process.env.TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL || 40), 5),
   100,
 );
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+
+let bot = null;
+if (TELEGRAM_BOT_TOKEN) {
+  try {
+    bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+    console.log("Telegram Bot started in polling mode.");
+
+    bot.onText(/\/start/, (msg) => {
+      const chatId = msg.chat.id;
+      bot.sendMessage(
+        chatId,
+        "Привет! Я бот для уведомлений о новых вакансиях.\n\n" +
+        "Чтобы подписаться на новые вакансии определенной категории, отправьте:\n" +
+        "`/subscribe <Категория>`\n" +
+        "Например: `/subscribe Frontend`\n\n" +
+        "Доступные категории: Backend, Frontend, Mobile, Data / Analytics, DevOps / SRE, QA / Testing, Design, Marketing / Sales, Support / Operations.\n\n" +
+        "Чтобы отписаться, отправьте:\n`/unsubscribe`",
+        { parse_mode: "Markdown" }
+      );
+    });
+
+    bot.onText(/\/subscribe (.+)/i, (msg, match) => {
+      const chatId = msg.chat.id;
+      const specialty = match[1].trim();
+
+      const existing = subscriptions.find((s) => s.chatId === chatId);
+      if (existing) {
+        existing.specialty = specialty;
+      } else {
+        subscriptions.push({ chatId, specialty });
+      }
+      saveSubscriptions();
+
+      bot.sendMessage(chatId, `Вы успешно подписались на уведомления о новых вакансиях в категории: *${specialty}*`, { parse_mode: "Markdown" });
+    });
+
+    bot.onText(/\/unsubscribe/i, (msg) => {
+      const chatId = msg.chat.id;
+      subscriptions = subscriptions.filter((s) => s.chatId !== chatId);
+      saveSubscriptions();
+      bot.sendMessage(chatId, "Вы отписались от уведомлений.");
+    });
+  } catch (error) {
+    console.error("Failed to start Telegram Bot:", error);
+  }
+}
+
+const aiClient = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+
+const SUBSCRIPTIONS_FILE = path.join(__dirname, "subscriptions.json");
+let subscriptions = [];
+try {
+  if (fs.existsSync(SUBSCRIPTIONS_FILE)) {
+    subscriptions = JSON.parse(fs.readFileSync(SUBSCRIPTIONS_FILE, "utf-8"));
+  }
+} catch (e) {
+  console.error("Error reading subscriptions:", e);
+}
+
+function saveSubscriptions() {
+  fs.writeFileSync(SUBSCRIPTIONS_FILE, JSON.stringify(subscriptions, null, 2));
+}
+
 const KZ_SOURCE_CATALOG = [
   { id: "hh", name: "HeadHunter Kazakhstan", type: "website", url: "https://hh.kz", mode: "live" },
   { id: "remotive", name: "Remotive API", type: "website", url: "https://remotive.com", mode: "live" },
@@ -108,15 +175,17 @@ function detectCityAI(job) {
 }
 
 const SPECIALTY_PATTERNS = [
-  { specialty: "Backend", patterns: ["backend", "back-end", "java", "python", "golang", "node.js", "php", "django", "laravel", "spring"] },
-  { specialty: "Frontend", patterns: ["frontend", "front-end", "react", "vue", "angular", "javascript", "typescript", "html", "css"] },
-  { specialty: "Mobile", patterns: ["android", "ios", "flutter", "react native", "kotlin", "swift", "mobile"] },
-  { specialty: "Data / Analytics", patterns: ["data", "analyst", "analytics", "bi", "power bi", "tableau", "sql", "etl"] },
-  { specialty: "DevOps / SRE", patterns: ["devops", "sre", "kubernetes", "docker", "ci/cd", "terraform", "ansible"] },
-  { specialty: "QA / Testing", patterns: ["qa", "test", "testing", "manual tester", "automation"] },
-  { specialty: "Design", patterns: ["designer", "ux", "ui", "figma", "product design"] },
-  { specialty: "Marketing / Sales", patterns: ["marketing", "smm", "seo", "sales", "business development", "продаж"] },
-  { specialty: "Support / Operations", patterns: ["support", "оператор", "call center", "клиент", "operations"] },
+  { specialty: "Backend", patterns: ["backend", "back-end", "java", "python", "golang", "node.js", "php", "django", "laravel", "spring", "c#", ".net", "ruby", "c++", "rust"] },
+  { specialty: "Frontend", patterns: ["frontend", "front-end", "react", "vue", "angular", "javascript", "typescript", "html", "css", "next.js", "nuxt", "svelte", "web-разработчик"] },
+  { specialty: "Mobile", patterns: ["android", "ios", "flutter", "react native", "kotlin", "swift", "mobile", "ios-разработчик", "android-разработчик"] },
+  { specialty: "Data / Analytics", patterns: ["data", "analyst", "analytics", "bi", "power bi", "tableau", "sql", "etl", "machine learning", "аналитик", "data science", "ai", "artificial intelligence"] },
+  { specialty: "DevOps / SRE", patterns: ["devops", "sre", "kubernetes", "docker", "ci/cd", "terraform", "ansible", "sysadmin", "системный администратор", "linux"] },
+  { specialty: "QA / Testing", patterns: ["qa", "test", "testing", "manual tester", "automation", "тестировщик", "qa engineer", "автотестировщик"] },
+  { specialty: "Design", patterns: ["designer", "ux", "ui", "figma", "product design", "дизайнер", "graphic design", "3d"] },
+  { specialty: "Marketing / Sales", patterns: ["marketing", "smm", "seo", "sales", "business development", "продаж", "маркетолог", "менеджер по продажам", "pr", "b2b"] },
+  { specialty: "HR / Recruiting", patterns: ["hr", "recruiter", "рекрутер", "менеджер по персоналу", "talent acquisition"] },
+  { specialty: "Management / PM", patterns: ["project manager", "product manager", "scrum", "agile", "руководитель проектов", "директор", "менеджер проекта", "ceo", "cto"] },
+  { specialty: "Support / Operations", patterns: ["support", "оператор", "call center", "клиент", "operations", "поддержка", "администратор"] },
 ];
 
 function detectSpecialtyAI(job) {
@@ -149,11 +218,42 @@ function deriveRegion(job) {
   return "Иностранный / Remote";
 }
 
+const aiCategoryCache = new Map();
+
+async function getSpecialtyForJob(job) {
+  if (aiCategoryCache.has(job.id)) {
+    return aiCategoryCache.get(job.id);
+  }
+
+  let specialty = detectSpecialtyAI(job);
+
+  if (aiClient) {
+    try {
+      const prompt = `Отнеси эту вакансию строго к ОДНОЙ из категорий: Backend, Frontend, Mobile, Data / Analytics, DevOps / SRE, QA / Testing, Design, Marketing / Sales, HR / Recruiting, Management / PM, Support / Operations, Other.\nВ ответе напиши ТОЛЬКО название категории.\nВакансия: ${job.title}\nОписание: ${job.description.slice(0, 300)}`;
+      const response = await aiClient.models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: prompt
+      });
+      const text = response.text.trim();
+      const validCategories = ["Backend", "Frontend", "Mobile", "Data / Analytics", "DevOps / SRE", "QA / Testing", "Design", "Marketing / Sales", "HR / Recruiting", "Management / PM", "Support / Operations", "Other"];
+      const matched = validCategories.find(c => text.toLowerCase().includes(c.toLowerCase()));
+      if (matched) {
+        specialty = matched;
+      }
+    } catch (e) {
+      console.error("Gemini AI error:", e.message);
+    }
+  }
+
+  aiCategoryCache.set(job.id, specialty);
+  return specialty;
+}
+
 function normalizeJobs(inputJobs) {
   return inputJobs.map((job) => {
     const region = deriveRegion(job);
     const city = detectCityAI(job);
-    const specialty = detectSpecialtyAI(job);
+    const specialty = aiCategoryCache.get(job.id) || detectSpecialtyAI(job);
     return {
       ...job,
       location: region,
@@ -724,7 +824,7 @@ app.get("/api/sources", (req, res) => {
   res.json({ sources: buildSources() });
 });
 
-app.get("/api/jobs", async (req, res) => {
+async function fetchAndNormalizeAllJobs() {
   const errors = [];
   const jobs = [];
   const useDateRange = HH_DATE_FROM.trim() && HH_DATE_TO.trim();
@@ -759,9 +859,6 @@ app.get("/api/jobs", async (req, res) => {
     errors.push(`Enbek: ${error.message}`);
   }
 
-  // NUR.KZ can be intermittently unavailable from some regions/DNS providers.
-  // Keep as catalog source for now; skip hard-failing live fetch.
-
   try {
     const olxJobs = await fetchOlxJobs();
     jobs.push(...olxJobs);
@@ -787,11 +884,17 @@ app.get("/api/jobs", async (req, res) => {
     ? jobs.filter((job) => inDateRange(job.postedAt, dateFromTs, dateToTs))
     : jobs;
   resultJobs.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+
   const normalizedJobs = normalizeJobs(resultJobs);
+
+  return { normalizedJobs, errors };
+}
+
+app.get("/api/jobs", async (req, res) => {
+  const { normalizedJobs, errors } = await fetchAndNormalizeAllJobs();
 
   let kzJobs = normalizedJobs.filter((job) => isKzJob(job));
   if (!kzJobs.length) {
-    // Fallback: never leave KZ section empty if regional sources are temporarily blocked.
     kzJobs = normalizedJobs.slice(0, 120);
     errors.push("KZ fallback: региональные источники временно недоступны, показаны общие вакансии.");
   }
@@ -804,6 +907,82 @@ app.get("/api/jobs", async (req, res) => {
     updatedAt: new Date().toISOString(),
   });
 });
+
+const seenJobIds = new Set();
+let isFirstRun = true;
+
+async function runBackgroundJobCheck() {
+  if (!bot) return;
+  console.log("Running background job check...");
+
+  try {
+    const { normalizedJobs } = await fetchAndNormalizeAllJobs();
+
+    if (isFirstRun) {
+      for (const job of normalizedJobs) {
+        seenJobIds.add(job.id);
+      }
+      isFirstRun = false;
+      console.log(`Initialized background check with ${seenJobIds.size} existing jobs.`);
+
+      // Асинхронный прогрев ИИ-кэша для первых 10 свежих вакансий
+      if (aiClient) {
+        (async () => {
+          console.log("Started background AI categorization for initial jobs...");
+          for (const job of normalizedJobs.slice(0, 10)) {
+            await getSpecialtyForJob(job);
+          }
+          console.log("Finished background AI categorization.");
+        })();
+      }
+
+      return;
+    }
+
+    const newJobs = [];
+    for (const job of normalizedJobs) {
+      if (!seenJobIds.has(job.id)) {
+        newJobs.push(job);
+        seenJobIds.add(job.id);
+      }
+    }
+
+    if (newJobs.length > 0) {
+      console.log(`Found ${newJobs.length} new jobs. Processing notifications...`);
+      for (const job of newJobs) {
+        const specialty = await getSpecialtyForJob(job);
+        job.specialty = specialty;
+
+        const subscribers = subscriptions.filter(s => s.specialty.toLowerCase() === specialty.toLowerCase() || s.specialty.toLowerCase() === "all");
+
+        for (const sub of subscribers) {
+          const msg = `🚀 *Новая вакансия: ${specialty}*\n\n` +
+            `*${job.title}*\n` +
+            `🏢 ${job.company}\n` +
+            `📍 ${job.location}\n\n` +
+            `${job.description.slice(0, 200)}...\n\n` +
+            `[Откликнуться](${job.url})`;
+
+          bot.sendMessage(sub.chatId, msg, { parse_mode: "Markdown", disable_web_page_preview: true })
+            .catch(err => console.error("Error sending TG msg:", err.message));
+        }
+      }
+    }
+
+    if (seenJobIds.size > 5000) {
+      const arr = Array.from(seenJobIds);
+      seenJobIds.clear();
+      for (let i = arr.length - 2000; i < arr.length; i++) {
+        if (arr[i]) seenJobIds.add(arr[i]);
+      }
+    }
+  } catch (err) {
+    console.error("Background job check failed:", err.message);
+  }
+}
+
+setInterval(runBackgroundJobCheck, 15 * 60 * 1000);
+setTimeout(runBackgroundJobCheck, 5000);
 
 app.get("/*all", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));

@@ -101,6 +101,8 @@ const els = {
   analyticsTelegramJobs: document.querySelector("#analyticsTelegramJobs"),
   analyticsCatalogSources: document.querySelector("#analyticsCatalogSources"),
   cityFilters: document.querySelector("#cityFilters"),
+  telegramSubscribeBox: document.querySelector("#telegramSubscribeBox"),
+  telegramSubscribeCommand: document.querySelector("#telegramSubscribeCommand"),
 };
 
 function formatDate(isoDate) {
@@ -278,6 +280,15 @@ function filterJobs() {
 function renderJobs() {
   const filteredJobs = filterJobs().sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
   els.vacancyCount.textContent = `${filteredJobs.length} вакансий`;
+  
+  if (state.specialty !== "all" || state.activeSection === "jobs") {
+    els.telegramSubscribeBox.classList.remove("hidden");
+    const subscribeCat = state.specialty === "all" ? "All" : state.specialty;
+    els.telegramSubscribeCommand.textContent = `/subscribe ${subscribeCat}`;
+  } else {
+    els.telegramSubscribeBox.classList.add("hidden");
+  }
+
   renderJobCollection(els.jobList, els.emptyState, filteredJobs, "Ничего не найдено. Измени фильтр или запрос.");
 }
 

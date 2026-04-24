@@ -407,3 +407,30 @@ main {
     grid-template-columns: 1fr;
   }
 }
+
+.telegram-subscribe-box {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: linear-gradient(135deg, rgba(86, 126, 255, 0.15), rgba(110, 59, 255, 0.15));
+  border: 1px solid rgba(86, 126, 255, 0.3);
+  border-radius: 10px;
+}
+
+.telegram-subscribe-box p {
+  margin: 0.3rem 0;
+  color: var(--text);
+}
+
+.telegram-subscribe-box a {
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.telegram-subscribe-box strong {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-family: monospace;
+  color: #a8b2d1;
+}
