@@ -180,7 +180,19 @@ function buildJobCard(job) {
   const favorite = isFavorite(job.id);
   favoriteBtn.textContent = favorite ? "В избранном" : "В избранное";
   favoriteBtn.classList.toggle("is-favorite", favorite);
-  favoriteBtn.addEventListener("click", () => toggleFavorite(job.id));
+  favoriteBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    toggleFavorite(job.id);
+  });
+
+  const applyBtn = document.createElement("button");
+  applyBtn.className = "apply-btn";
+  applyBtn.textContent = "Откликнуться";
+  applyBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    applyToJob(job.id);
+  });
+  node.querySelector(".job-actions").appendChild(applyBtn);
 
   const tagsContainer = node.querySelector(".job-tags");
   for (const tag of job.tags) {
@@ -301,31 +313,36 @@ function extractSalary(job) {
   return 0;
 }
 
-function filterJobs() {
-  const query = state.search.trim().toLowerCase();
-  return state.jobs.filter((job) => {
-    const sourceMatch = state.sourceId === "all" || job.sourceId === state.sourceId;
-    const typeMatch = state.type === "all" || job.type === state.type;
-    const specialtyMatch = state.specialty === "all" || String(job.specialty || "Other") === state.specialty;
-    const cityMatch = state.city === "all" || String(job.city || "") === state.city;
-    const text = [job.title, job.company, job.location, job.tags.join(" "), job.description]
-      .join(" ")
-      .toLowerCase();
-    const searchMatch = !query || text.includes(query);
+async function applyToJob(jobId) {
+  const token = localStorage.getItem("workflow_token");
+  if (!token) {
+    alert("Пожалуйста, войдите в систему, чтобы откликнуться на вакансию.");
+    document.querySelector("#authModal").classList.remove("hidden");
+    return;
+  }
 
-    let salaryMatch = true;
-    if (state.salary !== "all") {
-      const minSalary = parseInt(state.salary, 10);
-      const jobSalary = extractSalary(job);
-      salaryMatch = jobSalary >= minSalary;
+  try {
+    const res = await fetch("/api/apply", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ jobId })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert(data.message || "Отклик успешно отправлен!");
+    } else {
+      alert("Ошибка: " + data.error);
     }
-
-    return sourceMatch && typeMatch && specialtyMatch && cityMatch && searchMatch && salaryMatch;
-  });
+  } catch (e) {
+    alert("Произошла ошибка при отправке отклика.");
+  }
 }
 
 function renderJobs() {
-  let filteredJobs = filterJobs();
+  let filteredJobs = state.jobs;
   
   if (state.sort === "newest") {
     filteredJobs.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
@@ -501,7 +518,17 @@ function renderSections() {
 }
 
 async function loadJobs() {
-  const response = await fetch("/api/jobs");
+  const params = new URLSearchParams({
+    search: state.search,
+    sourceId: state.sourceId,
+    type: state.type,
+    specialty: state.specialty,
+    city: state.city,
+    salaryMin: state.salary,
+    sort: state.sort
+  });
+
+  const response = await fetch(`/api/jobs?${params.toString()}`);
   if (!response.ok) {
     throw new Error(`API вернул статус ${response.status}`);
   }
@@ -550,40 +577,42 @@ async function loadJobs() {
   state.isAutoRefresh = true;
 }
 
+let searchTimeout;
 function attachEvents() {
   els.searchInput.addEventListener("input", (event) => {
     state.search = event.target.value;
-    renderAllJobSections();
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => loadJobs(), 500);
   });
 
   els.sourceFilter.addEventListener("change", (event) => {
     state.sourceId = event.target.value;
-    renderAllJobSections();
+    loadJobs();
   });
 
   els.typeFilter.addEventListener("change", (event) => {
     state.type = event.target.value;
-    renderAllJobSections();
+    loadJobs();
   });
 
   els.specialtyFilter.addEventListener("change", (event) => {
     state.specialty = event.target.value;
-    renderAllJobSections();
+    loadJobs();
   });
 
   els.citySmartFilter.addEventListener("change", (event) => {
     state.city = event.target.value;
-    renderAllJobSections();
+    loadJobs();
   });
 
   els.salaryFilter.addEventListener("change", (event) => {
     state.salary = event.target.value;
-    renderAllJobSections();
+    loadJobs();
   });
 
   els.sortFilter.addEventListener("change", (event) => {
     state.sort = event.target.value;
-    renderAllJobSections();
+    loadJobs();
   });
 
   els.refreshBtn.addEventListener("click", async () => {
