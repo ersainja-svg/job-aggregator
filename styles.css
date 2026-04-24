@@ -210,8 +210,10 @@ main {
 }
 
 [data-panel="jobs"] h2 { color: #90dcff; }
+[data-panel="kz"] h2 { color: #9cffcf; }
 [data-panel="favorites"] h2 { color: #ffd27a; }
 [data-panel="remote"] h2 { color: #9ef2b1; }
+[data-panel="foreign"] h2 { color: #ffb7a1; }
 [data-panel="cities"] h2 { color: #c9b0ff; }
 [data-panel="sources"] h2 { color: #7de4d4; }
 [data-panel="telegram"] h2 { color: #82d7ff; }

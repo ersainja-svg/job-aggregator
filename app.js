@@ -40,6 +40,21 @@ const KZ_CITIES = [
   "Аягоз",
   "Мангистау",
 ];
+const KZ_LOCATION_KEYWORDS = [
+  ...KZ_CITIES.map((city) => city.toLowerCase()),
+  "казахстан",
+  "kазақстан",
+  "kz",
+  "almaty",
+  "astana",
+  "aktau",
+  "atyrau",
+  "karaganda",
+  "shymkent",
+  "mangystau",
+  "mangistau",
+  "zhanaozen",
+];
 
 const state = {
   jobs: [],
@@ -57,14 +72,18 @@ const els = {
   typeFilter: document.querySelector("#typeFilter"),
   vacancyCount: document.querySelector("#vacancyCount"),
   jobList: document.querySelector("#jobList"),
+  kzJobList: document.querySelector("#kzJobList"),
   favoriteJobList: document.querySelector("#favoriteJobList"),
   remoteJobList: document.querySelector("#remoteJobList"),
+  foreignJobList: document.querySelector("#foreignJobList"),
   cityJobList: document.querySelector("#cityJobList"),
   telegramJobList: document.querySelector("#telegramJobList"),
   sourceList: document.querySelector("#sourceList"),
   emptyState: document.querySelector("#emptyState"),
+  kzEmptyState: document.querySelector("#kzEmptyState"),
   favoriteEmptyState: document.querySelector("#favoriteEmptyState"),
   remoteEmptyState: document.querySelector("#remoteEmptyState"),
+  foreignEmptyState: document.querySelector("#foreignEmptyState"),
   cityEmptyState: document.querySelector("#cityEmptyState"),
   telegramEmptyState: document.querySelector("#telegramEmptyState"),
   refreshBtn: document.querySelector("#refreshBtn"),
@@ -261,6 +280,38 @@ function renderRemoteJobs() {
   renderJobCollection(els.remoteJobList, els.remoteEmptyState, remoteJobs, "Удаленных вакансий не найдено.");
 }
 
+function renderKzJobs() {
+  const kzJobs = state.jobs
+    .filter((job) => {
+      const sourceId = String(job.sourceId || "").toLowerCase();
+      if (sourceId === "hh" || sourceId === "rabota-nur" || sourceId === "olx-kz") {
+        return true;
+      }
+      if (sourceId.startsWith("tg-")) {
+        return true;
+      }
+      const text = `${job.location || ""} ${job.description || ""}`.toLowerCase();
+      return KZ_LOCATION_KEYWORDS.some((keyword) => text.includes(keyword));
+    })
+    .sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+  renderJobCollection(els.kzJobList, els.kzEmptyState, kzJobs, "Вакансий по Казахстану не найдено.");
+}
+
+function renderForeignJobs() {
+  const foreignJobs = state.jobs
+    .filter((job) => {
+      const sourceId = String(job.sourceId || "").toLowerCase();
+      if (sourceId.startsWith("tg-")) {
+        return false;
+      }
+      const locationText = `${job.location || ""} ${job.description || ""}`.toLowerCase();
+      return !KZ_LOCATION_KEYWORDS.some((keyword) => locationText.includes(keyword));
+    })
+    .sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+
+  renderJobCollection(els.foreignJobList, els.foreignEmptyState, foreignJobs, "Иностранных вакансий не найдено.");
+}
+
 function renderCityJobs() {
   const cityAliasMap = {
     Актау: ["актау", "aktau"],
@@ -281,8 +332,10 @@ function renderCityJobs() {
 
 function renderAllJobSections() {
   renderJobs();
+  renderKzJobs();
   renderFavoriteJobs();
   renderRemoteJobs();
+  renderForeignJobs();
   renderCityFilterButtons();
   renderCityJobs();
   renderTelegramJobs();
