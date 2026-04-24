@@ -7,7 +7,6 @@ const path = require("path");
 const cheerio = require("cheerio");
 const fs = require("fs");
 const TelegramBot = require("node-telegram-bot-api");
-const { GoogleGenAI } = require("@google/genai");
 
 const app = express();
 const PORT = Number(process.env.PORT || 8080);
@@ -103,8 +102,6 @@ const TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL = Math.min(
   Math.max(Number(process.env.TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL || 40), 5),
   100,
 );
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-
 let bot = null;
 if (TELEGRAM_BOT_TOKEN) {
   try {
@@ -150,8 +147,6 @@ if (TELEGRAM_BOT_TOKEN) {
     console.error("Failed to start Telegram Bot:", error);
   }
 }
-
-const aiClient = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
 const SUBSCRIPTIONS_FILE = path.join(__dirname, "subscriptions.json");
 let subscriptions = [];
@@ -292,42 +287,11 @@ function deriveRegion(job) {
   return "Иностранный / Remote";
 }
 
-const aiCategoryCache = new Map();
-
-async function getSpecialtyForJob(job) {
-  if (aiCategoryCache.has(job.id)) {
-    return aiCategoryCache.get(job.id);
-  }
-
-  let specialty = detectSpecialtyAI(job);
-
-  if (aiClient) {
-    try {
-      const prompt = `Отнеси эту вакансию строго к ОДНОЙ из категорий: Backend, Frontend, Mobile, Data / Analytics, DevOps / SRE, QA / Testing, Design, Marketing / Sales, HR / Recruiting, Management / PM, Support / Operations, Other.\nВ ответе напиши ТОЛЬКО название категории.\nВакансия: ${job.title}\nОписание: ${job.description.slice(0, 300)}`;
-      const response = await aiClient.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt
-      });
-      const text = response.text.trim();
-      const validCategories = ["Backend", "Frontend", "Mobile", "Data / Analytics", "DevOps / SRE", "QA / Testing", "Design", "Marketing / Sales", "HR / Recruiting", "Management / PM", "Support / Operations", "Other"];
-      const matched = validCategories.find(c => text.toLowerCase().includes(c.toLowerCase()));
-      if (matched) {
-        specialty = matched;
-      }
-    } catch (e) {
-      console.error("Gemini AI error:", e.message);
-    }
-  }
-
-  aiCategoryCache.set(job.id, specialty);
-  return specialty;
-}
-
 function normalizeJobs(inputJobs) {
   return inputJobs.map((job) => {
     const region = deriveRegion(job);
     const city = detectCityAI(job);
-    const specialty = aiCategoryCache.get(job.id) || detectSpecialtyAI(job);
+    const specialty = detectSpecialtyAI(job);
     return {
       ...job,
       location: region,
@@ -998,20 +962,6 @@ async function runBackgroundJobCheck() {
       }
       isFirstRun = false;
       console.log(`Initialized background check with ${seenJobIds.size} existing jobs.`);
-
-      // Асинхронный прогрев ИИ-кэша временно отключен из-за лимитов бесплатного API Gemini (15 RPM)
-      /*
-      if (aiClient) {
-        (async () => {
-          console.log("Started background AI categorization for initial jobs...");
-          for (const job of normalizedJobs.slice(0, 10)) {
-            await getSpecialtyForJob(job);
-          }
-          console.log("Finished background AI categorization.");
-        })();
-      }
-      */
-
       return;
     }
 
@@ -1026,8 +976,7 @@ async function runBackgroundJobCheck() {
     if (newJobs.length > 0) {
       console.log(`Found ${newJobs.length} new jobs. Processing notifications...`);
       for (const job of newJobs) {
-        const specialty = await getSpecialtyForJob(job);
-        job.specialty = specialty;
+        const specialty = job.specialty;
 
         const subscribers = subscriptions.filter(s => s.specialty.toLowerCase() === specialty.toLowerCase() || s.specialty.toLowerCase() === "all");
 
@@ -1060,40 +1009,6 @@ async function runBackgroundJobCheck() {
 setInterval(runBackgroundJobCheck, 15 * 60 * 1000);
 setTimeout(runBackgroundJobCheck, 5000);
 
-// ─── AI Sort: Gemini анализирует вакансии и выдаёт рейтинг ────────────────────
-app.post("/api/ai/sort", async (req, res) => {
-  if (!aiClient) {
-    return res.status(400).json({ error: "GEMINI_API_KEY не настроен" });
-  }
-
-  const { criteria, city, specialty, limit } = req.body || {};
-  const maxJobs = Math.min(Number(limit) || 20, 50);
-
-  try {
-    const { normalizedJobs } = await fetchAndNormalizeAllJobs();
-
-    // Pre-filter by city/specialty if given
-    let pool = normalizedJobs;
-    if (city && city !== "all") {
-      pool = pool.filter((j) => String(j.city || j.location || "").toLowerCase().includes(city.toLowerCase()));
-    }
-    if (specialty && specialty !== "all") {
-      pool = pool.filter((j) => String(j.specialty || "").toLowerCase() === specialty.toLowerCase());
-    }
-
-    // Take top jobs for AI analysis (limit to 30 to stay within context)
-    const sample = pool.slice(0, 30);
-    const jobSummaries = sample.map((j, i) => (
-      `${i + 1}. "${j.title}" | ${j.company} | ${j.city || j.location} | ${j.specialty || "Other"} | ${j.description?.slice(0, 120)}`
-    )).join("\n");
-
-    const userCriteria = criteria || "самые интересные и высокооплачиваемые вакансии";
-
-    const prompt = `Ты — эксперт-рекрутер. Проанализируй список вакансий и отсортируй по критерию: "${userCriteria}".
-
-Список вакансий:
-${jobSummaries}
-
 Ответь строго JSON-массивом (без markdown) из объектов: [{"index": <номер вакансии>, "score": <1-10>, "reason": "<краткое обоснование на русском, 1 предложение>"}]
 Отсортируй по убыванию score. Верни максимум ${maxJobs} записей.`;
 
@@ -1113,101 +1028,10 @@ ${jobSummaries}
       return res.json({ sorted: sample.slice(0, maxJobs), aiRaw: text });
     }
 
-    // Map AI rankings back to job objects
-    const sorted = ranked
-      .filter((r) => r.index >= 1 && r.index <= sample.length)
-      .map((r) => ({
-        ...sample[r.index - 1],
-        aiScore: r.score,
-        aiReason: r.reason,
-      }));
-
-    res.json({ sorted, total: pool.length });
-  } catch (error) {
-    console.error("AI Sort error:", error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ─── AI Chat: чат-ассистент по вакансиям ──────────────────────────────────────
-const chatHistories = new Map();
-
-app.post("/api/ai/chat", async (req, res) => {
-  if (!aiClient) {
-    return res.status(400).json({ error: "GEMINI_API_KEY не настроен" });
-  }
-
-  const { message, sessionId } = req.body || {};
-  if (!message) {
-    return res.status(400).json({ error: "Сообщение не указано" });
-  }
-
-  const sid = sessionId || "default";
-
-  try {
-    // Get current jobs for context
-    const { normalizedJobs } = await fetchAndNormalizeAllJobs();
-    const topJobs = normalizedJobs.slice(0, 40);
-    const jobContext = topJobs.map((j, i) => (
-      `${i + 1}. "${j.title}" — ${j.company}, ${j.city || j.location}, ${j.specialty || "?"}, ${j.type || "?"}, ${j.description?.slice(0, 100)}`
-    )).join("\n");
-
-    // Build chat history
-    if (!chatHistories.has(sid)) {
-      chatHistories.set(sid, []);
-    }
-    const history = chatHistories.get(sid);
-    history.push({ role: "user", text: message });
-
-    // Keep only last 10 messages for context window
-    if (history.length > 20) {
-      history.splice(0, history.length - 20);
-    }
-
-    const systemPrompt = `Ты — ИИ-ассистент платформы WorkFlow Jobs. Ты помогаешь пользователям находить работу и разбираться в вакансиях.
-
-Текущие вакансии (${topJobs.length} из ${normalizedJobs.length}):
-${jobContext}
-
-Правила:
-- Отвечай на русском языке
-- Если пользователь ищет работу — рекомендуй конкретные вакансии из списка с номерами
-- Можешь сравнивать вакансии, давать советы по резюме и подготовке к собеседованию
-- Если вакансия не найдена в списке — скажи об этом честно
-- Будь кратким и полезным
-- Используй эмодзи для лучшей читаемости`;
-
-    const chatMessages = history.map((m) => ({
-      role: m.role === "user" ? "user" : "model",
-      parts: [{ text: m.text }],
-    }));
-
-    const response = await aiClient.models.generateContent({
-      model: "gemini-2.5-flash",
-      systemInstruction: systemPrompt,
-      contents: chatMessages,
-    });
-
-    const reply = response.text.trim();
-    history.push({ role: "model", text: reply });
-
-    // Cleanup old sessions (keep max 100)
-    if (chatHistories.size > 100) {
-      const firstKey = chatHistories.keys().next().value;
-      chatHistories.delete(firstKey);
-    }
-
-    res.json({ reply, sessionId: sid });
-  } catch (error) {
-    console.error("AI Chat error:", error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.get("/*all", (req, res) => {
-  res.sendFile(path.join(__dirname, "index.html"));
+app.get('/*all', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.listen(PORT, () => {
-  console.log(`WorkFlow Jobs server started on http://localhost:${PORT}`);
+  console.log(WorkFlow Jobs server started on http://localhost:);
 });
