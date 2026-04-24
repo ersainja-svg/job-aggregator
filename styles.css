@@ -34,7 +34,7 @@ body {
 
 /* Background static orbs */
 .bg-orb {
-  position: fixed;
+  position: absolute;
   border-radius: 50%;
   filter: blur(100px);
   opacity: 0.3;

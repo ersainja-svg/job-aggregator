@@ -71,6 +71,7 @@ const state = {
   favorites: new Set(),
   previousJobIds: new Set(),
   isAutoRefresh: false,
+  resumes: [],
 };
 
 const els = {
@@ -88,6 +89,8 @@ const els = {
   foreignJobList: document.querySelector("#foreignJobList"),
   cityJobList: document.querySelector("#cityJobList"),
   telegramJobList: document.querySelector("#telegramJobList"),
+  directJobList: document.querySelector("#directJobList"),
+  resumesList: document.querySelector("#resumesList"),
   sourceList: document.querySelector("#sourceList"),
   emptyState: document.querySelector("#emptyState"),
   favoriteEmptyState: document.querySelector("#favoriteEmptyState"),
@@ -95,6 +98,8 @@ const els = {
   foreignEmptyState: document.querySelector("#foreignEmptyState"),
   cityEmptyState: document.querySelector("#cityEmptyState"),
   telegramEmptyState: document.querySelector("#telegramEmptyState"),
+  directEmptyState: document.querySelector("#directEmptyState"),
+  resumesEmptyState: document.querySelector("#resumesEmptyState"),
   refreshBtn: document.querySelector("#refreshBtn"),
   cardTpl: document.querySelector("#jobCardTemplate"),
   statusLine: document.querySelector("#statusLine"),
@@ -422,6 +427,49 @@ function renderAllJobSections() {
   renderCityFilterButtons();
   renderCityJobs();
   renderTelegramJobs();
+  renderDirectJobs();
+  renderResumes();
+}
+
+function renderDirectJobs() {
+  const directJobs = state.jobs
+    .filter((job) => job.sourceId === "custom")
+    .sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+  renderJobCollection(
+    els.directJobList,
+    els.directEmptyState,
+    directJobs,
+    "Пока нет прямых вакансий от работодателей."
+  );
+}
+
+function renderResumes() {
+  els.resumesList.innerHTML = "";
+  if (!state.resumes.length) {
+    els.resumesEmptyState.textContent = "Пока нет опубликованных резюме.";
+    els.resumesEmptyState.classList.remove("hidden");
+    return;
+  }
+  els.resumesEmptyState.classList.add("hidden");
+  
+  state.resumes.forEach(res => {
+    const card = document.createElement("article");
+    card.className = "job-card";
+    card.innerHTML = `
+      <div class="job-head">
+        <h3 class="job-title">${res.specialty}</h3>
+        <span class="job-source">Резюме</span>
+      </div>
+      <p class="job-company">Имя: ${res.name}</p>
+      <p class="job-location">Опыт: ${res.experience} лет</p>
+      ${res.salary ? `<p class="job-salary"><strong>💰 Желаемая ЗП:</strong> от ${res.salary} ₸</p>` : ''}
+      <p class="job-description">${res.skills}</p>
+      <div class="job-footer">
+        <span class="job-date">Опубликовано: ${formatDate(res.createdAt)}</span>
+      </div>
+    `;
+    els.resumesList.appendChild(card);
+  });
 }
 
 function renderAnalytics() {
@@ -469,6 +517,17 @@ async function loadJobs() {
 
   state.jobs = newJobs;
   sources = Array.isArray(payload.sources) ? payload.sources : [];
+
+  // Load resumes
+  try {
+    const resumesRes = await fetch("/api/resumes");
+    if (resumesRes.ok) {
+      const resumesData = await resumesRes.json();
+      state.resumes = resumesData.resumes || [];
+    }
+  } catch (e) {
+    console.error("Failed to load resumes", e);
+  }
 
   const parts = [];
   if (payload.updatedAt) {

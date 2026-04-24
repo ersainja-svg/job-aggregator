@@ -73,13 +73,15 @@
   <main class="container">
     <nav class="sections-nav">
       <button class="section-tab is-active" data-section="jobs" type="button">Лента вакансий</button>
+      <button class="section-tab" data-section="direct" type="button">Прямые вакансии</button>
+      <button class="section-tab" data-section="resumes" type="button">База резюме</button>
       <button class="section-tab" data-section="favorites" type="button">Избранное</button>
       <button class="section-tab" data-section="remote" type="button">Удаленка</button>
       <button class="section-tab" data-section="foreign" type="button">Иностранные</button>
       <button class="section-tab" data-section="cities" type="button">Города KZ</button>
       <button class="section-tab" data-section="sources" type="button">Источники</button>
       <button class="section-tab" data-section="analytics" type="button">Аналитика</button>
-      <button class="section-tab" data-section="cabinet" type="button">Личный кабинет</button>
+      <button class="section-tab" data-section="cabinet" type="button" style="display: none;">Личный кабинет</button>
     </nav>
 
     <section class="vacancies section-panel" data-panel="jobs">
@@ -103,8 +105,20 @@
 
     <section class="vacancies section-panel hidden" data-panel="foreign">
       <h2>Иностранные вакансии</h2>
+      <div id="foreignEmptyState" class="empty hidden">Иностранных вакансий не найдено.</div>
       <div id="foreignJobList" class="job-list"></div>
-      <p id="foreignEmptyState" class="empty hidden">Иностранных вакансий не найдено.</p>
+    </section>
+
+    <section class="vacancies section-panel hidden" data-panel="direct">
+      <h2>От прямых работодателей</h2>
+      <div id="directEmptyState" class="empty hidden">Пока нет прямых вакансий.</div>
+      <div id="directJobList" class="job-list"></div>
+    </section>
+
+    <section class="vacancies section-panel hidden" data-panel="resumes">
+      <h2>База резюме</h2>
+      <div id="resumesEmptyState" class="empty hidden">Пока нет опубликованных резюме.</div>
+      <div id="resumesList" class="job-list"></div>
     </section>
 
     <section class="vacancies section-panel hidden" data-panel="cities">

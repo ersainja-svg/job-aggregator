@@ -1488,6 +1488,10 @@ function requireAuth(req, res, next) {
   next();
 }
 
+app.get("/api/resumes", (req, res) => {
+  res.json({ resumes: customResumes });
+});
+
 // ─── Cabinet API Endpoints ───
 app.post("/api/cabinet/resume", requireAuth, (req, res) => {
   try {
