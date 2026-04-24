@@ -15,6 +15,8 @@ const HH_DATE_FROM = process.env.HH_DATE_FROM || "";
 const HH_DATE_TO = process.env.HH_DATE_TO || "";
 const HH_USER_AGENT = process.env.HH_USER_AGENT || "JobAggregator/1.0 (dev@localhost.local)";
 const REMOTE_JOBS_LIMIT = Math.min(Math.max(Number(process.env.REMOTE_JOBS_LIMIT || 60), 10), 200);
+const ARBEITNOW_PAGES = Math.min(Math.max(Number(process.env.ARBEITNOW_PAGES || 3), 1), 10);
+const ARBEITNOW_LIMIT = Math.min(Math.max(Number(process.env.ARBEITNOW_LIMIT || 90), 20), 300);
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHANNELS = (process.env.TELEGRAM_CHANNELS || "")
   .split(",")
@@ -24,6 +26,7 @@ const TELEGRAM_LIMIT_PER_CHANNEL = Number(process.env.TELEGRAM_LIMIT_PER_CHANNEL
 const KZ_SOURCE_CATALOG = [
   { id: "hh", name: "HeadHunter Kazakhstan", type: "website", url: "https://hh.kz", mode: "live" },
   { id: "remotive", name: "Remotive API", type: "website", url: "https://remotive.com", mode: "live" },
+  { id: "arbeitnow", name: "Arbeitnow API", type: "website", url: "https://www.arbeitnow.com", mode: "live" },
   { id: "enbek", name: "Enbek.kz", type: "website", url: "https://www.enbek.kz", mode: "catalog" },
   { id: "rabota-nur", name: "Rabota NUR.KZ", type: "website", url: "https://rabota.nur.kz", mode: "catalog" },
   { id: "olx-kz", name: "OLX Работа KZ", type: "website", url: "https://www.olx.kz/rabota", mode: "catalog" },
@@ -198,6 +201,45 @@ async function fetchRemotiveJobs() {
   }));
 }
 
+async function fetchArbeitnowJobs() {
+  const jobs = [];
+  let page = 1;
+
+  while (page <= ARBEITNOW_PAGES && jobs.length < ARBEITNOW_LIMIT) {
+    const { data } = await axios.get("https://www.arbeitnow.com/api/job-board-api", {
+      params: { page },
+      timeout: 15000,
+    });
+
+    const items = Array.isArray(data.data) ? data.data : [];
+    if (!items.length) {
+      break;
+    }
+
+    for (const item of items) {
+      if (jobs.length >= ARBEITNOW_LIMIT) {
+        break;
+      }
+      jobs.push({
+        id: `arbeitnow-${item.slug || `${page}-${jobs.length}`}`,
+        title: item.title || "Без названия",
+        company: item.company_name || "Не указана",
+        location: item.location || "Remote",
+        type: item.remote ? "remote" : "full-time",
+        sourceId: "arbeitnow",
+        tags: Array.isArray(item.tags) ? item.tags.slice(0, 5) : ["job"],
+        postedAt: item.created_at || new Date().toISOString(),
+        description: stripHtml(item.description || "").slice(0, 350),
+        url: item.url || "https://www.arbeitnow.com",
+      });
+    }
+
+    page += 1;
+  }
+
+  return jobs;
+}
+
 function buildSources() {
   const base = KZ_SOURCE_CATALOG.map((source) => {
     if (source.id === "hh") {
@@ -217,6 +259,16 @@ function buildSources() {
         type: source.type,
         url: source.url,
         note: `Remote API: до ${REMOTE_JOBS_LIMIT} вакансий`,
+        status: "live",
+      };
+    }
+    if (source.id === "arbeitnow") {
+      return {
+        id: source.id,
+        name: source.name,
+        type: source.type,
+        url: source.url,
+        note: `Global API: до ${ARBEITNOW_LIMIT} вакансий (${ARBEITNOW_PAGES} стр.)`,
         status: "live",
       };
     }
@@ -266,6 +318,13 @@ app.get("/api/jobs", async (req, res) => {
     jobs.push(...remotiveJobs);
   } catch (error) {
     errors.push(`Remotive: ${error.message}`);
+  }
+
+  try {
+    const arbeitnowJobs = await fetchArbeitnowJobs();
+    jobs.push(...arbeitnowJobs);
+  } catch (error) {
+    errors.push(`Arbeitnow: ${error.message}`);
   }
 
   try {
