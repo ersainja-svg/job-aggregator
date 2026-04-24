@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WorkFlow Jobs - агрегатор вакансий</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="container">
+      <h1>WorkFlow Jobs</h1>
+      <p>Все вакансии в одном месте: сайты, Telegram-каналы и другие источники.</p>
+      <div class="controls">
+        <input id="searchInput" type="search" placeholder="Поиск по должности, навыкам, компании...">
+        <select id="sourceFilter">
+          <option value="all">Все источники</option>
+        </select>
+        <select id="typeFilter">
+          <option value="all">Любой формат</option>
+          <option value="full-time">Full-time</option>
+          <option value="part-time">Part-time</option>
+          <option value="contract">Контракт</option>
+          <option value="internship">Стажировка</option>
+          <option value="remote">Удаленно</option>
+        </select>
+      </div>
+      <div class="meta">
+        <span id="vacancyCount">0 вакансий</span>
+        <button id="refreshBtn" type="button">Обновить</button>
+      </div>
+      <p id="statusLine" class="status-line"></p>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="sources">
+      <h2>Подключенные источники</h2>
+      <div id="sourceList" class="source-list"></div>
+    </section>
+
+    <section class="vacancies">
+      <h2>Лента вакансий</h2>
+      <div id="jobList" class="job-list"></div>
+      <p id="emptyState" class="empty hidden">Ничего не найдено. Измени фильтр или запрос.</p>
+    </section>
+  </main>
+
+  <template id="jobCardTemplate">
+    <article class="job-card">
+      <div class="job-head">
+        <h3 class="job-title"></h3>
+        <span class="job-source"></span>
+      </div>
+      <p class="job-company"></p>
+      <p class="job-location"></p>
+      <p class="job-description"></p>
+      <div class="job-tags"></div>
+      <div class="job-footer">
+        <span class="job-date"></span>
+        <a class="job-link" target="_blank" rel="noopener noreferrer">Открыть</a>
+      </div>
+    </article>
+  </template>
+
+  <script src="./app.js"></script>
+</body>
+</html>
