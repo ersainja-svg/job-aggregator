@@ -593,9 +593,7 @@ app.get("/api/jobs", async (req, res) => {
     : jobs;
   resultJobs.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
 
-  const kzDateFromTs = new Date("2026-01-01T00:00:00Z").getTime();
-  const nowTs = Date.now();
-  const kzJobs = resultJobs.filter((job) => isKzJob(job) && inDateRange(job.postedAt, kzDateFromTs, nowTs));
+  const kzJobs = resultJobs.filter((job) => isKzJob(job));
 
   res.json({
     jobs: resultJobs,
