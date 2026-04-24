@@ -30,6 +30,9 @@ const NUR_LIMIT = Math.min(Math.max(Number(process.env.NUR_LIMIT || 120), 10), 3
 const OLX_LIMIT = Math.min(Math.max(Number(process.env.OLX_LIMIT || 120), 10), 300);
 const KZ_QUERY = process.env.KZ_QUERY || "Казахстан Алматы Астана Шымкент Актау";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+
+axios.defaults.timeout = 10000;
+
 const TELEGRAM_CHANNELS = (process.env.TELEGRAM_CHANNELS || "")
   .split(",")
   .map((item) => item.trim().replace(/^@/, ""))
