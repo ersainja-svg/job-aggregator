@@ -10,7 +10,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 8080);
 const HH_AREA = process.env.HH_AREA || "113";
 const HH_TEXT = process.env.HH_TEXT || "";
-const HH_PER_PAGE = Number(process.env.HH_PER_PAGE || 20);
+const HH_PER_PAGE = Math.min(Math.max(Number(process.env.HH_PER_PAGE || 100), 1), 100);
 const HH_PAGES = Math.min(Math.max(Number(process.env.HH_PAGES || 5), 1), 20);
 const HH_DATE_FROM = process.env.HH_DATE_FROM || "";
 const HH_DATE_TO = process.env.HH_DATE_TO || "";
@@ -18,9 +18,11 @@ const HH_USER_AGENT = process.env.HH_USER_AGENT || "JobAggregator/1.0 (dev@local
 const REMOTE_JOBS_LIMIT = Math.min(Math.max(Number(process.env.REMOTE_JOBS_LIMIT || 60), 10), 200);
 const ARBEITNOW_PAGES = Math.min(Math.max(Number(process.env.ARBEITNOW_PAGES || 3), 1), 10);
 const ARBEITNOW_LIMIT = Math.min(Math.max(Number(process.env.ARBEITNOW_LIMIT || 90), 20), 300);
-const NUR_LIMIT = Math.min(Math.max(Number(process.env.NUR_LIMIT || 40), 10), 200);
-const OLX_LIMIT = Math.min(Math.max(Number(process.env.OLX_LIMIT || 40), 10), 200);
-const KZ_QUERY = process.env.KZ_QUERY || "Казахстан";
+const ENBEK_PAGES = Math.min(Math.max(Number(process.env.ENBEK_PAGES || 10), 1), 30);
+const ENBEK_LIMIT = Math.min(Math.max(Number(process.env.ENBEK_LIMIT || 300), 20), 1000);
+const NUR_LIMIT = Math.min(Math.max(Number(process.env.NUR_LIMIT || 120), 10), 300);
+const OLX_LIMIT = Math.min(Math.max(Number(process.env.OLX_LIMIT || 120), 10), 300);
+const KZ_QUERY = process.env.KZ_QUERY || "Казахстан Алматы Астана Шымкент Актау";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHANNELS = (process.env.TELEGRAM_CHANNELS || "")
   .split(",")
@@ -31,7 +33,7 @@ const KZ_SOURCE_CATALOG = [
   { id: "hh", name: "HeadHunter Kazakhstan", type: "website", url: "https://hh.kz", mode: "live" },
   { id: "remotive", name: "Remotive API", type: "website", url: "https://remotive.com", mode: "live" },
   { id: "arbeitnow", name: "Arbeitnow API", type: "website", url: "https://www.arbeitnow.com", mode: "live" },
-  { id: "enbek", name: "Enbek.kz", type: "website", url: "https://www.enbek.kz", mode: "catalog" },
+  { id: "enbek", name: "Enbek.kz", type: "website", url: "https://www.enbek.kz", mode: "live" },
   { id: "rabota-nur", name: "Rabota NUR.KZ", type: "website", url: "https://rabota.nur.kz", mode: "live" },
   { id: "olx-kz", name: "OLX Работа KZ", type: "website", url: "https://www.olx.kz/rabota", mode: "live" },
   { id: "linkedin-kz", name: "LinkedIn Jobs KZ", type: "website", url: "https://www.linkedin.com/jobs", mode: "catalog" },
@@ -99,6 +101,27 @@ function inDateRange(isoDate, fromTs, toTs) {
     return false;
   }
   return ts >= fromTs && ts <= toTs;
+}
+
+function isKzJob(job) {
+  const sourceId = String(job.sourceId || "").toLowerCase();
+  if (sourceId === "hh" || sourceId === "rabota-nur" || sourceId === "olx-kz" || sourceId.startsWith("tg-")) {
+    return true;
+  }
+  const text = `${job.location || ""} ${job.description || ""}`.toLowerCase();
+  return (
+    text.includes("казахстан")
+    || text.includes("kz")
+    || text.includes("алматы")
+    || text.includes("астана")
+    || text.includes("шымкент")
+    || text.includes("актау")
+    || text.includes("атырау")
+    || text.includes("караганда")
+    || text.includes("мангистау")
+    || text.includes("мангыстау")
+    || text.includes("mangystau")
+  );
 }
 
 async function fetchHhJobs() {
@@ -252,6 +275,70 @@ async function fetchArbeitnowJobs() {
   return jobs;
 }
 
+async function fetchEnbekJobs() {
+  const jobs = [];
+  const seen = new Set();
+
+  for (let page = 1; page <= ENBEK_PAGES && jobs.length < ENBEK_LIMIT; page += 1) {
+    const { data } = await axios.get("https://enbek.kz/ru/search/vacancy", {
+      params: { page, text: KZ_QUERY || undefined },
+      timeout: 15000,
+      headers: { "User-Agent": HH_USER_AGENT },
+    });
+
+    const $ = cheerio.load(String(data || ""));
+    const pageLinks = $("a[href*='/ru/vacancy/'], a[href*='/vacancy/']");
+    if (!pageLinks.length) {
+      break;
+    }
+
+    pageLinks.each((_, node) => {
+      if (jobs.length >= ENBEK_LIMIT) {
+        return false;
+      }
+      const href = $(node).attr("href");
+      if (!href) {
+        return undefined;
+      }
+      const url = safeAbsoluteUrl(href, "https://enbek.kz");
+      if (seen.has(url)) {
+        return undefined;
+      }
+      seen.add(url);
+
+      const card = $(node).closest("article, li, .vacancy-item, .search-result-item, .list-group-item, div");
+      const title =
+        stripHtml($(node).find("h2, h3, h4, [class*=title]").first().text()) ||
+        stripHtml($(node).text()) ||
+        "Вакансия Enbek.kz";
+      const company =
+        stripHtml(card.find("[class*=company], [class*=employer], [data-qa*=company]").first().text()) || "Не указана";
+      const location =
+        stripHtml(card.find("[class*=region], [class*=city], [class*=location], [data-qa*=address]").first().text()) || "Казахстан";
+      const salary =
+        stripHtml(card.find("[class*=salary], [class*=wage], [data-qa*=salary]").first().text()) || "";
+      const descriptionBase = stripHtml(card.find("p, [class*=description], [class*=snippet]").first().text());
+      const description = [salary, descriptionBase].filter(Boolean).join(" | ").slice(0, 350) || "Вакансия с Enbek.kz";
+
+      jobs.push({
+        id: `enbek-${Buffer.from(url).toString("base64").slice(0, 20)}`,
+        title: title.slice(0, 140),
+        company,
+        location,
+        type: detectType(`${title} ${description}`),
+        sourceId: "enbek",
+        tags: ["kz", "enbek.kz", "local"],
+        postedAt: new Date().toISOString(),
+        description,
+        url,
+      });
+      return undefined;
+    });
+  }
+
+  return jobs;
+}
+
 async function fetchNurJobs() {
   const { data } = await axios.get("https://rabota.nur.kz/search", {
     params: { text: KZ_QUERY },
@@ -388,6 +475,16 @@ function buildSources() {
         status: "live",
       };
     }
+    if (source.id === "enbek") {
+      return {
+        id: source.id,
+        name: source.name,
+        type: source.type,
+        url: source.url,
+        note: `Enbek scraper: до ${ENBEK_LIMIT} вакансий (${ENBEK_PAGES} стр.)`,
+        status: "live",
+      };
+    }
     if (source.id === "rabota-nur") {
       return {
         id: source.id,
@@ -464,6 +561,13 @@ app.get("/api/jobs", async (req, res) => {
   }
 
   try {
+    const enbekJobs = await fetchEnbekJobs();
+    jobs.push(...enbekJobs);
+  } catch (error) {
+    errors.push(`Enbek: ${error.message}`);
+  }
+
+  try {
     const nurJobs = await fetchNurJobs();
     jobs.push(...nurJobs);
   } catch (error) {
@@ -488,8 +592,14 @@ app.get("/api/jobs", async (req, res) => {
     ? jobs.filter((job) => inDateRange(job.postedAt, dateFromTs, dateToTs))
     : jobs;
   resultJobs.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+
+  const kzDateFromTs = new Date("2026-01-01T00:00:00Z").getTime();
+  const nowTs = Date.now();
+  const kzJobs = resultJobs.filter((job) => isKzJob(job) && inDateRange(job.postedAt, kzDateFromTs, nowTs));
+
   res.json({
     jobs: resultJobs,
+    kzJobs,
     sources: buildSources(),
     errors,
     updatedAt: new Date().toISOString(),
