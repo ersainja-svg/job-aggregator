@@ -85,9 +85,8 @@ h1, h2, h3 {
   border-bottom: 1px solid var(--border);
   background: linear-gradient(to bottom, rgba(17, 24, 39, 0.8), transparent);
   backdrop-filter: blur(12px);
-  position: sticky;
-  top: 0;
-  z-index: 50;
+  position: relative;
+  z-index: 10;
 }
 
 .hero-top {
