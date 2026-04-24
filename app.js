@@ -1,10 +1,14 @@
 let sources = [];
+const FAVORITES_STORAGE_KEY = "workflow_jobs_favorites";
 
 const state = {
   jobs: [],
   search: "",
   sourceId: "all",
   type: "all",
+  activeSection: "jobs",
+  selectedCity: "all",
+  favorites: new Set(),
 };
 
 const els = {
@@ -13,11 +17,26 @@ const els = {
   typeFilter: document.querySelector("#typeFilter"),
   vacancyCount: document.querySelector("#vacancyCount"),
   jobList: document.querySelector("#jobList"),
+  favoriteJobList: document.querySelector("#favoriteJobList"),
+  remoteJobList: document.querySelector("#remoteJobList"),
+  cityJobList: document.querySelector("#cityJobList"),
+  telegramJobList: document.querySelector("#telegramJobList"),
   sourceList: document.querySelector("#sourceList"),
   emptyState: document.querySelector("#emptyState"),
+  favoriteEmptyState: document.querySelector("#favoriteEmptyState"),
+  remoteEmptyState: document.querySelector("#remoteEmptyState"),
+  cityEmptyState: document.querySelector("#cityEmptyState"),
+  telegramEmptyState: document.querySelector("#telegramEmptyState"),
   refreshBtn: document.querySelector("#refreshBtn"),
   cardTpl: document.querySelector("#jobCardTemplate"),
   statusLine: document.querySelector("#statusLine"),
+  sectionTabs: document.querySelectorAll(".section-tab"),
+  sectionPanels: document.querySelectorAll(".section-panel"),
+  analyticsTotal: document.querySelector("#analyticsTotal"),
+  analyticsLiveSources: document.querySelector("#analyticsLiveSources"),
+  analyticsTelegramJobs: document.querySelector("#analyticsTelegramJobs"),
+  analyticsCatalogSources: document.querySelector("#analyticsCatalogSources"),
+  cityFilters: document.querySelectorAll(".city-filter"),
 };
 
 function formatDate(isoDate) {
@@ -32,6 +51,76 @@ function formatDate(isoDate) {
 
 function getSourceById(sourceId) {
   return sources.find((source) => source.id === sourceId);
+}
+
+function loadFavorites() {
+  try {
+    const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    state.favorites = new Set(Array.isArray(parsed) ? parsed : []);
+  } catch (error) {
+    state.favorites = new Set();
+  }
+}
+
+function persistFavorites() {
+  localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify([...state.favorites]));
+}
+
+function isFavorite(jobId) {
+  return state.favorites.has(jobId);
+}
+
+function toggleFavorite(jobId) {
+  if (state.favorites.has(jobId)) {
+    state.favorites.delete(jobId);
+  } else {
+    state.favorites.add(jobId);
+  }
+  persistFavorites();
+  renderAllJobSections();
+}
+
+function buildJobCard(job) {
+  const source = getSourceById(job.sourceId);
+  const node = els.cardTpl.content.cloneNode(true);
+  node.querySelector(".job-title").textContent = job.title;
+  node.querySelector(".job-source").textContent = source ? source.name : "Источник неизвестен";
+  node.querySelector(".job-company").textContent = `Компания: ${job.company}`;
+  node.querySelector(".job-location").textContent = `Локация: ${job.location}`;
+  node.querySelector(".job-description").textContent = job.description;
+  node.querySelector(".job-date").textContent = `Опубликовано: ${formatDate(job.postedAt)}`;
+  const link = node.querySelector(".job-link");
+  link.href = job.url;
+
+  const favoriteBtn = node.querySelector(".favorite-btn");
+  const favorite = isFavorite(job.id);
+  favoriteBtn.textContent = favorite ? "В избранном" : "В избранное";
+  favoriteBtn.classList.toggle("is-favorite", favorite);
+  favoriteBtn.addEventListener("click", () => toggleFavorite(job.id));
+
+  const tagsContainer = node.querySelector(".job-tags");
+  for (const tag of job.tags) {
+    const tagNode = document.createElement("span");
+    tagNode.className = "tag";
+    tagNode.textContent = tag;
+    tagsContainer.appendChild(tagNode);
+  }
+
+  return node;
+}
+
+function renderJobCollection(targetList, targetEmptyState, jobs, emptyMessage) {
+  targetList.innerHTML = "";
+  if (!jobs.length) {
+    targetEmptyState.textContent = emptyMessage;
+    targetEmptyState.classList.remove("hidden");
+    return;
+  }
+  targetEmptyState.classList.add("hidden");
+  for (const job of jobs) {
+    targetList.appendChild(buildJobCard(job));
+  }
 }
 
 function renderSources() {
@@ -80,36 +169,84 @@ function filterJobs() {
 
 function renderJobs() {
   const filteredJobs = filterJobs().sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
-  els.jobList.innerHTML = "";
   els.vacancyCount.textContent = `${filteredJobs.length} вакансий`;
+  renderJobCollection(els.jobList, els.emptyState, filteredJobs, "Ничего не найдено. Измени фильтр или запрос.");
+}
 
-  if (!filteredJobs.length) {
-    els.emptyState.classList.remove("hidden");
-    return;
+function renderTelegramJobs() {
+  const telegramJobs = state.jobs
+    .filter((job) => String(job.sourceId).startsWith("tg-"))
+    .sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+  renderJobCollection(
+    els.telegramJobList,
+    els.telegramEmptyState,
+    telegramJobs,
+    "Пока нет Telegram-вакансий или не настроен бот.",
+  );
+}
+
+function renderFavoriteJobs() {
+  const favoriteJobs = state.jobs
+    .filter((job) => isFavorite(job.id))
+    .sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+  renderJobCollection(els.favoriteJobList, els.favoriteEmptyState, favoriteJobs, "Пока нет избранных вакансий.");
+}
+
+function renderRemoteJobs() {
+  const remoteJobs = state.jobs
+    .filter((job) => {
+      const text = `${job.type || ""} ${job.location || ""} ${job.description || ""}`.toLowerCase();
+      return job.type === "remote" || text.includes("удален") || text.includes("remote");
+    })
+    .sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+  renderJobCollection(els.remoteJobList, els.remoteEmptyState, remoteJobs, "Удаленных вакансий не найдено.");
+}
+
+function renderCityJobs() {
+  const cityJobs = state.jobs
+    .filter((job) => {
+      if (state.selectedCity === "all") {
+        return true;
+      }
+      return String(job.location || "").toLowerCase().includes(state.selectedCity.toLowerCase());
+    })
+    .sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+  renderJobCollection(els.cityJobList, els.cityEmptyState, cityJobs, "По выбранному городу вакансий нет.");
+}
+
+function renderAllJobSections() {
+  renderJobs();
+  renderFavoriteJobs();
+  renderRemoteJobs();
+  renderCityJobs();
+  renderTelegramJobs();
+}
+
+function renderAnalytics() {
+  const liveSources = sources.filter((source) => source.status === "live").length;
+  const catalogSources = sources.filter((source) => source.status === "catalog").length;
+  const telegramJobs = state.jobs.filter((job) => String(job.sourceId).startsWith("tg-")).length;
+
+  els.analyticsTotal.textContent = String(state.jobs.length);
+  els.analyticsLiveSources.textContent = String(liveSources);
+  els.analyticsTelegramJobs.textContent = String(telegramJobs);
+  els.analyticsCatalogSources.textContent = String(catalogSources);
+}
+
+function renderSections() {
+  document.body.dataset.section = state.activeSection;
+  for (const tab of els.sectionTabs) {
+    tab.classList.toggle("is-active", tab.dataset.section === state.activeSection);
   }
-
-  els.emptyState.classList.add("hidden");
-  for (const job of filteredJobs) {
-    const source = getSourceById(job.sourceId);
-    const node = els.cardTpl.content.cloneNode(true);
-    node.querySelector(".job-title").textContent = job.title;
-    node.querySelector(".job-source").textContent = source ? source.name : "Источник неизвестен";
-    node.querySelector(".job-company").textContent = `Компания: ${job.company}`;
-    node.querySelector(".job-location").textContent = `Локация: ${job.location}`;
-    node.querySelector(".job-description").textContent = job.description;
-    node.querySelector(".job-date").textContent = `Опубликовано: ${formatDate(job.postedAt)}`;
-    const link = node.querySelector(".job-link");
-    link.href = job.url;
-
-    const tagsContainer = node.querySelector(".job-tags");
-    for (const tag of job.tags) {
-      const tagNode = document.createElement("span");
-      tagNode.className = "tag";
-      tagNode.textContent = tag;
-      tagsContainer.appendChild(tagNode);
+  for (const panel of els.sectionPanels) {
+    const isActive = panel.dataset.panel === state.activeSection;
+    panel.classList.toggle("hidden", !isActive);
+    if (isActive) {
+      panel.classList.remove("panel-animate");
+      requestAnimationFrame(() => panel.classList.add("panel-animate"));
+    } else {
+      panel.classList.remove("panel-animate");
     }
-
-    els.jobList.appendChild(node);
   }
 }
 
@@ -131,22 +268,24 @@ async function loadJobs() {
   }
   els.statusLine.textContent = parts.join(" | ");
   renderSources();
+  renderAllJobSections();
+  renderAnalytics();
 }
 
 function attachEvents() {
   els.searchInput.addEventListener("input", (event) => {
     state.search = event.target.value;
-    renderJobs();
+    renderAllJobSections();
   });
 
   els.sourceFilter.addEventListener("change", (event) => {
     state.sourceId = event.target.value;
-    renderJobs();
+    renderAllJobSections();
   });
 
   els.typeFilter.addEventListener("change", (event) => {
     state.type = event.target.value;
-    renderJobs();
+    renderAllJobSections();
   });
 
   els.refreshBtn.addEventListener("click", async () => {
@@ -154,20 +293,39 @@ function attachEvents() {
     els.refreshBtn.textContent = "Обновляем...";
     try {
       await loadJobs();
-      renderJobs();
+      renderAllJobSections();
     } catch (error) {
       els.statusLine.textContent = `Ошибка загрузки: ${error.message}`;
     }
     els.refreshBtn.disabled = false;
     els.refreshBtn.textContent = "Обновить";
   });
+
+  for (const tab of els.sectionTabs) {
+    tab.addEventListener("click", () => {
+      state.activeSection = tab.dataset.section;
+      renderSections();
+    });
+  }
+
+  for (const filter of els.cityFilters) {
+    filter.addEventListener("click", () => {
+      state.selectedCity = filter.dataset.city;
+      for (const item of els.cityFilters) {
+        item.classList.toggle("is-active", item.dataset.city === state.selectedCity);
+      }
+      renderCityJobs();
+    });
+  }
 }
 
 async function init() {
+  loadFavorites();
   attachEvents();
   try {
     await loadJobs();
-    renderJobs();
+    renderAllJobSections();
+    renderSections();
   } catch (error) {
     els.statusLine.textContent = `Ошибка загрузки: ${error.message}`;
   }

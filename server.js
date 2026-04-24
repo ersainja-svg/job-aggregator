@@ -8,9 +8,13 @@ const path = require("path");
 const app = express();
 const PORT = Number(process.env.PORT || 8080);
 const HH_AREA = process.env.HH_AREA || "113";
-const HH_TEXT = process.env.HH_TEXT || "developer";
+const HH_TEXT = process.env.HH_TEXT || "";
 const HH_PER_PAGE = Number(process.env.HH_PER_PAGE || 20);
+const HH_PAGES = Math.min(Math.max(Number(process.env.HH_PAGES || 5), 1), 20);
+const HH_DATE_FROM = process.env.HH_DATE_FROM || "";
+const HH_DATE_TO = process.env.HH_DATE_TO || "";
 const HH_USER_AGENT = process.env.HH_USER_AGENT || "JobAggregator/1.0 (dev@localhost.local)";
+const REMOTE_JOBS_LIMIT = Math.min(Math.max(Number(process.env.REMOTE_JOBS_LIMIT || 60), 10), 200);
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHANNELS = (process.env.TELEGRAM_CHANNELS || "")
   .split(",")
@@ -19,6 +23,7 @@ const TELEGRAM_CHANNELS = (process.env.TELEGRAM_CHANNELS || "")
 const TELEGRAM_LIMIT_PER_CHANNEL = Number(process.env.TELEGRAM_LIMIT_PER_CHANNEL || 20);
 const KZ_SOURCE_CATALOG = [
   { id: "hh", name: "HeadHunter Kazakhstan", type: "website", url: "https://hh.kz", mode: "live" },
+  { id: "remotive", name: "Remotive API", type: "website", url: "https://remotive.com", mode: "live" },
   { id: "enbek", name: "Enbek.kz", type: "website", url: "https://www.enbek.kz", mode: "catalog" },
   { id: "rabota-nur", name: "Rabota NUR.KZ", type: "website", url: "https://rabota.nur.kz", mode: "catalog" },
   { id: "olx-kz", name: "OLX Работа KZ", type: "website", url: "https://www.olx.kz/rabota", mode: "catalog" },
@@ -51,20 +56,8 @@ function detectType(text) {
   return "full-time";
 }
 
-async function fetchHhJobs() {
-  const { data } = await axios.get("https://api.hh.ru/vacancies", {
-    params: {
-      text: HH_TEXT,
-      area: HH_AREA,
-      per_page: HH_PER_PAGE,
-      order_by: "publication_time",
-    },
-    timeout: 15000,
-    headers: { "User-Agent": HH_USER_AGENT },
-  });
-
-  const items = Array.isArray(data.items) ? data.items : [];
-  return items.map((item) => ({
+function mapHhItem(item) {
+  return {
     id: `hh-${item.id}`,
     title: item.name || "Без названия",
     company: item.employer?.name || "Не указана",
@@ -77,7 +70,64 @@ async function fetchHhJobs() {
     postedAt: item.published_at || new Date().toISOString(),
     description: stripHtml(item.snippet?.responsibility || item.snippet?.requirement || ""),
     url: item.alternate_url || "https://hh.ru",
-  }));
+  };
+}
+
+function toSafeTime(value, fallback) {
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? fallback : timestamp;
+}
+
+function inDateRange(isoDate, fromTs, toTs) {
+  const ts = new Date(isoDate).getTime();
+  if (Number.isNaN(ts)) {
+    return false;
+  }
+  return ts >= fromTs && ts <= toTs;
+}
+
+async function fetchHhJobs() {
+  const jobs = [];
+  const unique = new Set();
+  const useDateRange = HH_DATE_FROM.trim() && HH_DATE_TO.trim();
+
+  for (let page = 0; page < HH_PAGES; page += 1) {
+    const params = {
+      area: HH_AREA,
+      per_page: HH_PER_PAGE,
+      page,
+      order_by: "publication_time",
+    };
+    if (useDateRange) {
+      params.date_from = HH_DATE_FROM.trim();
+      params.date_to = HH_DATE_TO.trim();
+    }
+    if (HH_TEXT.trim()) {
+      params.text = HH_TEXT.trim();
+    }
+
+    const { data } = await axios.get("https://api.hh.ru/vacancies", {
+      params,
+      timeout: 15000,
+      headers: { "User-Agent": HH_USER_AGENT },
+    });
+
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length) {
+      break;
+    }
+
+    for (const item of items) {
+      const key = String(item.id);
+      if (unique.has(key)) {
+        continue;
+      }
+      unique.add(key);
+      jobs.push(mapHhItem(item));
+    }
+  }
+
+  return jobs;
 }
 
 async function fetchTelegramJobs() {
@@ -128,6 +178,26 @@ async function fetchTelegramJobs() {
   return jobs.slice(0, TELEGRAM_CHANNELS.length * TELEGRAM_LIMIT_PER_CHANNEL);
 }
 
+async function fetchRemotiveJobs() {
+  const { data } = await axios.get("https://remotive.com/api/remote-jobs", {
+    timeout: 15000,
+  });
+
+  const items = Array.isArray(data.jobs) ? data.jobs.slice(0, REMOTE_JOBS_LIMIT) : [];
+  return items.map((item) => ({
+    id: `remotive-${item.id}`,
+    title: item.title || "Без названия",
+    company: item.company_name || "Не указана",
+    location: item.candidate_required_location || "Remote",
+    type: "remote",
+    sourceId: "remotive",
+    tags: Array.isArray(item.tags) ? item.tags.slice(0, 5) : ["remote"],
+    postedAt: item.publication_date || new Date().toISOString(),
+    description: stripHtml(item.description || "").slice(0, 350),
+    url: item.url || "https://remotive.com",
+  }));
+}
+
 function buildSources() {
   const base = KZ_SOURCE_CATALOG.map((source) => {
     if (source.id === "hh") {
@@ -136,7 +206,17 @@ function buildSources() {
         name: source.name,
         type: source.type,
         url: source.url,
-        note: `Поиск: ${HH_TEXT}, регион: ${HH_AREA}`,
+        note: `HH API: ${HH_PAGES} стр., по ${HH_PER_PAGE} вакансий, регион: ${HH_AREA}`,
+        status: "live",
+      };
+    }
+    if (source.id === "remotive") {
+      return {
+        id: source.id,
+        name: source.name,
+        type: source.type,
+        url: source.url,
+        note: `Remote API: до ${REMOTE_JOBS_LIMIT} вакансий`,
         status: "live",
       };
     }
@@ -170,6 +250,9 @@ app.get("/api/sources", (req, res) => {
 app.get("/api/jobs", async (req, res) => {
   const errors = [];
   const jobs = [];
+  const useDateRange = HH_DATE_FROM.trim() && HH_DATE_TO.trim();
+  const dateFromTs = toSafeTime(HH_DATE_FROM, Number.MIN_SAFE_INTEGER);
+  const dateToTs = toSafeTime(HH_DATE_TO, Number.MAX_SAFE_INTEGER);
 
   try {
     const hhJobs = await fetchHhJobs();
@@ -179,15 +262,25 @@ app.get("/api/jobs", async (req, res) => {
   }
 
   try {
+    const remotiveJobs = await fetchRemotiveJobs();
+    jobs.push(...remotiveJobs);
+  } catch (error) {
+    errors.push(`Remotive: ${error.message}`);
+  }
+
+  try {
     const tgJobs = await fetchTelegramJobs();
     jobs.push(...tgJobs);
   } catch (error) {
     errors.push(`Telegram: ${error.message}`);
   }
 
-  jobs.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+  const resultJobs = useDateRange
+    ? jobs.filter((job) => inDateRange(job.postedAt, dateFromTs, dateToTs))
+    : jobs;
+  resultJobs.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
   res.json({
-    jobs,
+    jobs: resultJobs,
     sources: buildSources(),
     errors,
     updatedAt: new Date().toISOString(),
