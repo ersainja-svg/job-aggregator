@@ -29,6 +29,14 @@ const TELEGRAM_CHANNELS = (process.env.TELEGRAM_CHANNELS || "")
   .map((item) => item.trim().replace(/^@/, ""))
   .filter(Boolean);
 const TELEGRAM_LIMIT_PER_CHANNEL = Number(process.env.TELEGRAM_LIMIT_PER_CHANNEL || 20);
+const TELEGRAM_PUBLIC_CHANNELS = (process.env.TELEGRAM_PUBLIC_CHANNELS || "rabotaaktau,kz_jobs")
+  .split(",")
+  .map((item) => item.trim().replace(/^@/, ""))
+  .filter(Boolean);
+const TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL = Math.min(
+  Math.max(Number(process.env.TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL || 40), 5),
+  100,
+);
 const KZ_SOURCE_CATALOG = [
   { id: "hh", name: "HeadHunter Kazakhstan", type: "website", url: "https://hh.kz", mode: "live" },
   { id: "remotive", name: "Remotive API", type: "website", url: "https://remotive.com", mode: "live" },
@@ -269,6 +277,49 @@ async function fetchTelegramJobs() {
   }
 
   return jobs.slice(0, TELEGRAM_CHANNELS.length * TELEGRAM_LIMIT_PER_CHANNEL);
+}
+
+async function fetchTelegramPublicJobs() {
+  const jobs = [];
+  for (const channel of TELEGRAM_PUBLIC_CHANNELS) {
+    try {
+      const { data } = await axios.get(`https://t.me/s/${channel}`, {
+        timeout: 15000,
+        headers: { "User-Agent": HH_USER_AGENT },
+      });
+      const $ = cheerio.load(String(data || ""));
+      const channelJobs = [];
+      $(".tgme_widget_message_wrap").each((_, node) => {
+        if (channelJobs.length >= TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL) {
+          return false;
+        }
+        const messageEl = $(node);
+        const text = stripHtml(messageEl.find(".tgme_widget_message_text").text());
+        if (!text) {
+          return undefined;
+        }
+        const link = messageEl.find("a.tgme_widget_message_date").attr("href");
+        const msgId = String(link || "").split("/").pop() || `${channel}-${channelJobs.length}`;
+        channelJobs.push({
+          id: `tg-public-${channel}-${msgId}`,
+          title: text.split("\n")[0].slice(0, 120) || `Вакансия @${channel}`,
+          company: `Telegram @${channel}`,
+          location: "Казахстан",
+          type: detectType(text),
+          sourceId: `tg-public-${channel}`,
+          tags: ["telegram", "kz", "public"],
+          postedAt: new Date().toISOString(),
+          description: text.slice(0, 500),
+          url: link ? safeAbsoluteUrl(link, `https://t.me/${channel}`) : `https://t.me/${channel}`,
+        });
+        return undefined;
+      });
+      jobs.push(...channelJobs);
+    } catch (_error) {
+      // Skip broken public channels silently; other sources still return.
+    }
+  }
+  return jobs;
 }
 
 async function fetchRemotiveJobs() {
@@ -580,7 +631,16 @@ function buildSources() {
     status: TELEGRAM_BOT_TOKEN ? "live" : "setup-needed",
   }));
 
-  return [...base, ...tgSources];
+  const tgPublicSources = TELEGRAM_PUBLIC_CHANNELS.map((channel) => ({
+    id: `tg-public-${channel}`,
+    name: `Telegram Public: @${channel}`,
+    type: "telegram",
+    url: `https://t.me/s/${channel}`,
+    note: `Public parser: до ${TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL} постов`,
+    status: "live",
+  }));
+
+  return [...base, ...tgSources, ...tgPublicSources];
 }
 
 app.get("/api/sources", (req, res) => {
@@ -637,6 +697,13 @@ app.get("/api/jobs", async (req, res) => {
     jobs.push(...tgJobs);
   } catch (error) {
     errors.push(`Telegram: ${error.message}`);
+  }
+
+  try {
+    const tgPublicJobs = await fetchTelegramPublicJobs();
+    jobs.push(...tgPublicJobs);
+  } catch (error) {
+    errors.push(`Telegram Public: ${error.message}`);
   }
 
   const resultJobs = useDateRange
