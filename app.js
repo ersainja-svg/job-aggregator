@@ -324,7 +324,7 @@ function renderCityJobs() {
       if (state.selectedCity === "all") {
         return true;
       }
-      const location = String(job.location || "").toLowerCase();
+      const location = String(job.city || job.region || job.location || "").toLowerCase();
       const aliases = cityAliasMap[state.selectedCity] || [String(state.selectedCity).toLowerCase()];
       return aliases.some((alias) => location.includes(alias));
     })

@@ -56,6 +56,57 @@ function stripHtml(html) {
   return String(html || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 }
 
+const KZ_CITY_ALIASES = {
+  Алматы: ["алматы", "almaty"],
+  Астана: ["астана", "astana", "нур-султан", "nur-sultan", "nursultan"],
+  Шымкент: ["шымкент", "shymkent"],
+  Актау: ["актау", "aktau"],
+  Актобе: ["актобе", "aktobe"],
+  Атырау: ["атырау", "atyrau"],
+  Караганда: ["караганда", "karaganda"],
+  Павлодар: ["павлодар", "pavlodar"],
+  Костанай: ["костанай", "kostanay", "kostanai"],
+  Кокшетау: ["кокшетау", "kokshetau"],
+  Петропавловск: ["петропавловск", "petropavlovsk"],
+  "Усть-Каменогорск": ["усть-каменогорск", "oskemen", "ust-kamenogorsk"],
+  Семей: ["семей", "semey"],
+  Талдыкорган: ["талдыкорган", "taldykorgan"],
+  Тараз: ["тараз", "taraz"],
+  Туркестан: ["туркестан", "turkistan"],
+  Кызылорда: ["кызылорда", "kyzylorda"],
+  Уральск: ["уральск", "oral", "uralsk"],
+  Жезказган: ["жезказган", "zhezkazgan"],
+  Экибастуз: ["экибастуз", "ekibastuz"],
+  Рудный: ["рудный", "rudny"],
+  Темиртау: ["темиртау", "temirtau"],
+  Жанаозен: ["жанаозен", "zhanaozen"],
+  Балхаш: ["балхаш", "balkhash"],
+  Сатпаев: ["сатпаев", "satpayev"],
+  Конаев: ["конаев", "konaev", "kapchagay", "капчагай"],
+  Кульсары: ["кульсары", "kulsary"],
+  Аксай: ["аксай", "aksai"],
+  Степногорск: ["степногорск", "stepnogorsk"],
+  Риддер: ["риддер", "ridder"],
+  Щучинск: ["щучинск", "shchuchinsk"],
+  Текели: ["текели", "tekeli"],
+  Сарыагаш: ["сарыагаш", "saryagash"],
+  Аркалык: ["аркалык", "arkalyk"],
+  Шу: ["шу", "shu"],
+  Жаркент: ["жаркент", "zharkent"],
+  Аягоз: ["аягоз", "ayagoz"],
+  Мангистау: ["мангистау", "мангыстау", "mangystau", "mangistau"],
+};
+
+function detectCityAI(job) {
+  const text = `${job.title || ""} ${job.location || ""} ${job.description || ""}`.toLowerCase();
+  for (const [city, aliases] of Object.entries(KZ_CITY_ALIASES)) {
+    if (aliases.some((alias) => text.includes(alias))) {
+      return city;
+    }
+  }
+  return null;
+}
+
 function deriveRegion(job) {
   const sourceId = String(job.sourceId || "").toLowerCase();
   const rawLocation = String(job.location || "").trim();
@@ -79,10 +130,12 @@ function deriveRegion(job) {
 function normalizeJobs(inputJobs) {
   return inputJobs.map((job) => {
     const region = deriveRegion(job);
+    const city = detectCityAI(job);
     return {
       ...job,
       location: region,
       region,
+      city: city || region,
     };
   });
 }
