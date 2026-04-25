@@ -1342,7 +1342,7 @@ async function sendDigests() {
 setInterval(sendDigests, 60*60*1000);
 setTimeout(sendDigests, 30000);
 
-setInterval(runBackgroundJobCheck, 1 * 60 * 1000);
+setInterval(runBackgroundJobCheck, 5 * 60 * 1000);
 setTimeout(runBackgroundJobCheck, 1000);
 
 // ─── Auth API Endpoints ───
