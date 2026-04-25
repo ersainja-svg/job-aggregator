@@ -1097,75 +1097,15 @@ function buildSources() {
 
   return [...base, ...tgSources, ...tgPublicSources];
 }
-
 app.get("/api/sources", (req, res) => {
   res.json({ sources: buildSources() });
 });
 
-async function fetchAndNormalizeAllJobs() {
-  const errors = [];
-  const jobs = [];
-  const useDateRange = HH_DATE_FROM.trim() && HH_DATE_TO.trim();
-  const dateFromTs = toSafeTime(HH_DATE_FROM, Number.MIN_SAFE_INTEGER);
-  const dateToTs = toSafeTime(HH_DATE_TO, Number.MAX_SAFE_INTEGER);
-
-  try {
-    const hhJobs = await fetchHhJobs();
-    jobs.push(...hhJobs);
-  } catch (error) {
-    errors.push(`HH: ${error.message}`);
-  }
-
-  try {
-    const enbekJobs = await fetchEnbekJobs();
-    jobs.push(...enbekJobs);
-  } catch (error) {
-    errors.push(`Enbek: ${error.message}`);
-  }
-
-  try {
-    const olxJobs = await fetchOlxJobs();
-    jobs.push(...olxJobs);
-  } catch (error) {
-    errors.push(`OLX: ${error.message}`);
-  }
-
-  try {
-    const nurJobs = await fetchRabotaNurJobs();
-    jobs.push(...nurJobs);
-  } catch (error) {
-    errors.push(`NUR.KZ: ${error.message}`);
-  }
-
-  try {
-    const tgJobs = await fetchTelegramJobs();
-    jobs.push(...tgJobs);
-  } catch (error) {
-    errors.push(`Telegram: ${error.message}`);
-  }
-
-  try {
-    const tgPublicJobs = await fetchTelegramPublicJobs();
-    jobs.push(...tgPublicJobs);
-  } catch (error) {
-    errors.push(`Telegram Public: ${error.message}`);
-  }
-
-  const resultJobs = useDateRange
-    ? jobs.filter((job) => inDateRange(job.postedAt, dateFromTs, dateToTs))
-    : jobs;
-  
-  // Add custom vacancies published via Cabinet
-  resultJobs.push(...customVacancies);
-  
-  resultJobs.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
-
-  const normalizedJobs = normalizeJobs(resultJobs);
-
-  return { normalizedJobs, errors };
-}
-
 app.get("/api/jobs", async (req, res) => {
+  // If cache is empty and no fetch is running, trigger a quick initial fetch
+  if ((!cachedJobs || cachedJobs.length === 0) && !isBackgroundJobRunning) {
+    runBackgroundJobCheck().catch(e => console.error("Initial fetch failed:", e.message));
+  }
 
   // Always ensure custom vacancies are in the response
   const allJobs = [...cachedJobs];
@@ -1201,22 +1141,53 @@ async function runBackgroundJobCheck() {
   console.log("Running background job check...");
 
   try {
-    const { normalizedJobs } = await fetchAndNormalizeAllJobs();
+    const jobs = [];
+    const errors = [];
 
-    // Merge with custom vacancies so they're never lost
-    const mergedJobs = [...normalizedJobs];
-    for (const cv of customVacancies) {
-      if (!mergedJobs.find(j => j.id === cv.id)) {
-        mergedJobs.unshift({ ...cv, region: cv.location || 'Казахстан', city: cv.location || 'Казахстан', specialty: 'Other' });
-      }
-    }
-    mergedJobs.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+    // Helper to update cache partially
+    const updatePartialCache = () => {
+      const merged = [...jobs, ...customVacancies];
+      merged.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+      cachedJobs = normalizeJobs(merged);
+    };
 
-    // Update cached jobs
-    cachedJobs = mergedJobs;
+    // HH
+    try {
+      const hh = await fetchHhJobs();
+      jobs.push(...hh);
+      updatePartialCache();
+    } catch (e) { errors.push(`HH: ${e.message}`); }
+
+    // Enbek
+    try {
+      const enbek = await fetchEnbekJobs();
+      jobs.push(...enbek);
+      updatePartialCache();
+    } catch (e) { errors.push(`Enbek: ${e.message}`); }
+
+    // OLX
+    try {
+      const olx = await fetchOlxJobs();
+      jobs.push(...olx);
+      updatePartialCache();
+    } catch (e) { errors.push(`OLX: ${e.message}`); }
+
+    // Nur.kz
+    try {
+      const nur = await fetchRabotaNurJobs();
+      jobs.push(...nur);
+      updatePartialCache();
+    } catch (e) { errors.push(`NUR.KZ: ${e.message}`); }
+
+    // Telegram Public
+    try {
+      const tgPub = await fetchTelegramPublicJobs();
+      jobs.push(...tgPub);
+      updatePartialCache();
+    } catch (e) { errors.push(`TG Public: ${e.message}`); }
 
     if (isFirstRun) {
-      for (const job of mergedJobs) {
+      for (const job of cachedJobs) {
         seenJobIds.add(job.id);
       }
       isFirstRun = false;
@@ -1224,7 +1195,7 @@ async function runBackgroundJobCheck() {
     }
 
     const newJobs = [];
-    for (const job of mergedJobs) {
+    for (const job of cachedJobs) {
       if (!seenJobIds.has(job.id)) {
         newJobs.push(job);
         seenJobIds.add(job.id);
@@ -1236,13 +1207,8 @@ async function runBackgroundJobCheck() {
       for (const job of newJobs) {
         const specialty = job.specialty;
         const jobCity = job.city || job.location || "";
-
-        // Match subscribers: check specialties and cities
         const subscribers = subscriptions.filter((s) => {
-          // Check specialty match
-          const specMatch = !s.specialties || !s.specialties.length
-            || s.specialties.includes("All")
-            || s.specialties.some((sp) => sp.toLowerCase() === specialty.toLowerCase());
+          const specMatch = !s.specialties || !s.specialties.length || s.specialties.includes("All") || s.specialties.some((sp) => sp.toLowerCase() === specialty.toLowerCase());
           if (!specMatch) return false;
 
           // Check city match (empty = all cities)
