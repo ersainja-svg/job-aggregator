@@ -629,14 +629,14 @@ async function init() {
     els.statusLine.textContent = `Ошибка загрузки: ${error.message}`;
   }
 
-  // Auto-refresh every 3 seconds for instant vacancy updates
+  // Auto-refresh every 1 second for instant vacancy updates
   setInterval(async () => {
     try {
       await loadJobs();
     } catch (_e) {
       // Silently retry on next cycle
     }
-  }, 3 * 1000);
+  }, 1000);
 }
 
 init();
