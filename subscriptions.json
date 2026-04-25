@@ -5,8 +5,31 @@
       "All"
     ],
     "cities": [
-      "Актау"
+      "Актау",
+      "Шымкент",
+      "Караганда",
+      "Костанай",
+      "Кокшетау",
+      "Павлодар",
+      "Атырау",
+      "Алматы"
     ],
+    "favorites": [],
+    "resume": {
+      "skills": "Бугалтер",
+      "experience": "",
+      "salary": ""
+    },
+    "lang": "ru",
+    "digest": "off",
+    "salaryMin": 200000,
+    "salaryMax": 500000,
+    "createdAt": "2026-04-24T20:10:01.173Z"
+  },
+  {
+    "chatId": 1209761199,
+    "specialties": [],
+    "cities": [],
     "favorites": [],
     "resume": {
       "skills": "",
@@ -17,6 +40,6 @@
     "digest": "off",
     "salaryMin": 0,
     "salaryMax": 0,
-    "createdAt": "2026-04-24T20:10:01.173Z"
+    "createdAt": "2026-04-25T11:49:38.093Z"
   }
 ]

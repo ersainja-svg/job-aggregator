@@ -24,7 +24,6 @@ const HH_USER_AGENT = process.env.HH_USER_AGENT || "Mozilla/5.0 (Windows NT 10.0
 const ENBEK_PAGES = Number(process.env.ENBEK_PAGES || 15);
 const ENBEK_LIMIT = Number(process.env.ENBEK_LIMIT || 5000);
 const NUR_LIMIT = Number(process.env.NUR_LIMIT || 5000);
-const OLX_LIMIT = Number(process.env.OLX_LIMIT || 5000);
 const KZ_QUERY = process.env.KZ_QUERY || "Казахстан";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 
@@ -160,6 +159,18 @@ function hashPassword(password) {
 
 
 
+// ─── Helpers used by both bot and notifications ───
+function escapeMd(text) {
+  // MarkdownV1 only needs: _ * ` [
+  return String(text || "").replace(/[_*`\[]/g, "\\$&");
+}
+
+function getLabel(s) {
+  if (s === "All") return "Все категории";
+  const found = SPECIALTY_PATTERNS.find(p => p.specialty === s);
+  return found ? found.label : s;
+}
+
 // ─── Telegram Bot ───
 let bot = null;
 if (TELEGRAM_BOT_TOKEN) {
@@ -201,7 +212,8 @@ if (TELEGRAM_BOT_TOKEN) {
         const row = [];
         for (let j = i; j < Math.min(i + 2, ALL_SPECIALTIES.length); j++) {
           const s = ALL_SPECIALTIES[j];
-          row.push({ text: `${user.specialties.includes(s) ? "\u2705" : "\u2B1C"} ${s}`, callback_data: `ts_${j}` });
+          const label = SPECIALTY_PATTERNS[j].label || s;
+          row.push({ text: `${user.specialties.includes(s) ? "\u2705" : "\u2B1C"} ${label}`, callback_data: `ts_${j}` });
         }
         rows.push(row);
       }
@@ -253,7 +265,7 @@ if (TELEGRAM_BOT_TOKEN) {
     // /profile
     bot.onText(/\/profile/, (msg) => {
       const u = getOrCreateUser(msg.chat.id);
-      const sp = u.specialties.length ? u.specialties.join(", ") : "\u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u044B";
+      const sp = u.specialties.length ? u.specialties.map(getLabel).join(", ") : "\u043D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u044B";
       const ct = u.cities.length ? u.cities.join(", ") : "\u0432\u0441\u0435 \u0433\u043E\u0440\u043E\u0434\u0430";
       bot.sendMessage(msg.chat.id,
         `\u{1F464} *\u041F\u0440\u043E\u0444\u0438\u043B\u044C*\n\u{1F4CB} \u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u0438: ${sp}\n\u{1F3D9} \u0413\u043E\u0440\u043E\u0434\u0430: ${ct}\n\u2B50 \u0418\u0437\u0431\u0440\u0430\u043D\u043D\u044B\u0445: ${u.favorites.length}`,
@@ -280,9 +292,9 @@ if (TELEGRAM_BOT_TOKEN) {
         bot.sendMessage(chatId, `\u{1F50D} \u041F\u043E \u00AB${q}\u00BB \u043D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E.`);
         return;
       }
-      let txt = `\u{1F50D} *\u00AB${q}\u00BB* (${off + 1}-${Math.min(off + PS, hits.length)} \u0438\u0437 ${hits.length})\n\n`;
+      let txt = `🔍 *«${escapeMd(q)}»* (${off + 1}-${Math.min(off + PS, hits.length)} из ${hits.length})\n\n`;
       for (const j of page) {
-        txt += `\u25AA\uFE0F *${j.title}*\n\u{1F3E2} ${j.company} \u00B7 \u{1F4CD} ${j.location}\n[\u041E\u0442\u043A\u0440\u044B\u0442\u044C](${j.url})\n\n`;
+        txt += `▪️ *${escapeMd(j.title)}*\n🏢 ${escapeMd(j.company)} · 📍 ${escapeMd(j.location)}\n[Открыть](${j.url})\n\n`;
       }
       const nav = [];
       const qk = Buffer.from(q).toString("base64").slice(0, 28);
@@ -294,16 +306,22 @@ if (TELEGRAM_BOT_TOKEN) {
 
 
     // /resume
-    bot.onText(/\/resume\s+(skills|exp|salary)\s+(.+)/i, (msg, match) => {
+    bot.onText(/\/resume(?:\s+(skills|навыки|exp|опыт|salary|зп))?\s+(.+)/i, (msg, match) => {
       const u = getOrCreateUser(msg.chat.id);
-      const field = match[1].toLowerCase();
+      let field = (match[1] || "skills").toLowerCase();
       const val = match[2].trim();
+      
+      if (field === "навыки") field = "skills";
+      else if (field === "опыт" || field === "exp") field = "exp";
+      else if (field === "зп" || field === "salary") field = "salary";
+      else field = "skills"; // default
+
       if (field === "skills") u.resume.skills = val;
       else if (field === "exp") u.resume.experience = val;
       else if (field === "salary") u.resume.salary = val;
       saveSubscriptions();
       const labels = { skills: "Навыки", exp: "Опыт", salary: "ЗП" };
-      bot.sendMessage(msg.chat.id, "✅ " + labels[field] + " обновлены: *" + val + "*", { parse_mode: "Markdown" });
+      bot.sendMessage(msg.chat.id, "✅ " + labels[field] + " обновлены: *" + escapeMd(val) + "*", { parse_mode: "Markdown" });
     });
 
     // /salary
@@ -350,7 +368,7 @@ if (TELEGRAM_BOT_TOKEN) {
             let txt = "\u2B50 *\u0418\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435:*\n\n";
             for (const fid of u.favorites.slice(0, 10)) {
               const j = cachedJobs.find((x) => x.id === fid);
-              if (j) txt += `\u25AA\uFE0F *${j.title}*\n\u{1F3E2} ${j.company}\n[\u041E\u0442\u043A\u0440\u044B\u0442\u044C](${j.url})\n\n`;
+              if (j) txt += `\u25AA\uFE0F *${escapeMd(j.title)}*\n\u{1F3E2} ${escapeMd(j.company)}\n[\u041E\u0442\u043A\u0440\u044B\u0442\u044C](${j.url})\n\n`;
               else txt += "\u25AA\uFE0F _\u0443\u0434\u0430\u043B\u0435\u043D\u0430_\n";
             }
             await bot.editMessageText(txt,
@@ -367,7 +385,7 @@ if (TELEGRAM_BOT_TOKEN) {
 
         } else if (d === "m_profile") {
           const u = getOrCreateUser(chatId);
-          const sp = u.specialties.length ? u.specialties.join(", ") : "\u2014";
+          const sp = u.specialties.length ? u.specialties.map(getLabel).join(", ") : "\u2014";
           const ct = u.cities.length ? u.cities.join(", ") : "\u0432\u0441\u0435";
           await bot.editMessageText(
             `\u{1F464} *\u041F\u0440\u043E\u0444\u0438\u043B\u044C*\n\u{1F4CB} ${sp}\n\u{1F3D9} ${ct}\n\u2B50 ${u.favorites.length}`,
@@ -392,13 +410,14 @@ if (TELEGRAM_BOT_TOKEN) {
           const sl = u.resume.salary || "не указана";
           await bot.editMessageText(
             "📝 *Ваше резюме*\n\n" +
-            "🔧 Навыки: " + sk + "\n" +
-            "💼 Опыт: " + ex + "\n" +
-            "💰 ЗП: " + sl + "\n\n" +
+            "🔧 Навыки: " + escapeMd(sk) + "\n" +
+            "💼 Опыт: " + escapeMd(ex) + "\n" +
+            "💰 ЗП: " + escapeMd(sl) + "\n\n" +
             "Чтобы заполнить:\n" +
-            "/resume skills Python, React\n" +
-            "/resume exp 3 года\n" +
-            "/resume salary 500000 KZT",
+            "/resume навыки Python, SQL\n" +
+            "/resume опыт 3 года\n" +
+            "/resume зп 500000 KZT\n\n" +
+            "💡 Можно просто: `/resume Бухгалтер`",
             { chat_id: chatId, message_id: msgId, parse_mode: "Markdown",
               reply_markup: { inline_keyboard: [[{ text: "🗑 Сбросить", callback_data: "clr_resume" }, { text: "🔙 Меню", callback_data: "m_main" }]] } });
 
@@ -450,9 +469,9 @@ if (TELEGRAM_BOT_TOKEN) {
               const jt = (j.title + " " + j.description + " " + (j.tags || []).join(" ")).toLowerCase();
               return skills.some((sk) => jt.includes(sk));
             }).slice(0, 5);
-            let txt = "🤖 *AI подбор:*\n🔧 " + u.resume.skills + "\n\n";
+            let txt = "🤖 *AI подбор:*\n🔧 " + escapeMd(u.resume.skills) + "\n\n";
             if (matched.length) {
-              for (const j of matched) txt += "▪️ *" + j.title + "*\n🏢 " + j.company + " · 📍 " + j.location + "\n[Открыть](" + j.url + ")\n\n";
+              for (const j of matched) txt += "▪️ *" + escapeMd(j.title) + "*\n🏢 " + escapeMd(j.company) + " · 📍 " + escapeMd(j.location) + "\n[Открыть](" + j.url + ")\n\n";
             } else txt += "Пока нет подходящих.";
             await bot.editMessageText(txt,
               { chat_id: chatId, message_id: msgId, parse_mode: "Markdown", disable_web_page_preview: true,
@@ -475,8 +494,8 @@ if (TELEGRAM_BOT_TOKEN) {
           await bot.answerCallbackQuery(cb.id, { text: "✅ Ваш отклик и резюме успешно отправлены работодателю!", show_alert: true });
 
           // Send a notification mock back to demonstrate the 'Employer Notification' feature
-          const applicantInfo = `Кандидат: tg://user?id=${chatId}\nНавыки: ${u.resume.skills || "Не указаны"}\nОпыт: ${u.resume.experience || "Не указан"}\nОжидания: ${u.resume.salary || "Не указаны"}`;
-          bot.sendMessage(chatId, `🔔 *(Для работодателя) Уведомление об отклике*\n\nНа вашу вакансию *${job.title}* поступил новый отклик!\n\n${applicantInfo}`, { parse_mode: "Markdown" }).catch(e => {});
+          const applicantInfo = `Кандидат: tg://user?id=${chatId}\nНавыки: ${escapeMd(u.resume.skills || "Не указаны")}\nОпыт: ${escapeMd(u.resume.experience || "Не указан")}\nОжидания: ${escapeMd(u.resume.salary || "Не указаны")}`;
+          bot.sendMessage(chatId, `🔔 *(Для работодателя) Уведомление об отклике*\n\nНа вашу вакансию *${escapeMd(job.title)}* поступил новый отклик!\n\n${applicantInfo}`, { parse_mode: "Markdown" }).catch(e => {});
           
           return;
 
@@ -544,11 +563,8 @@ const KZ_SOURCE_CATALOG = [
   { id: "hh", name: "HeadHunter Kazakhstan", type: "website", url: "https://hh.kz", mode: "live" },
   { id: "enbek", name: "Enbek.kz", type: "website", url: "https://www.enbek.kz", mode: "live" },
   { id: "rabota-nur", name: "Rabota NUR.KZ", type: "website", url: "https://rabota.nur.kz", mode: "live" },
-  { id: "olx-kz", name: "OLX Работа KZ", type: "website", url: "https://www.olx.kz/rabota", mode: "live" },
 ];
 
-app.use(cors());
-app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
 function stripHtml(html) {
@@ -607,17 +623,17 @@ function detectCityAI(job) {
 }
 
 const SPECIALTY_PATTERNS = [
-  { specialty: "Backend", patterns: ["backend", "back-end", "java", "python", "golang", "node.js", "php", "django", "laravel", "spring", "c#", ".net", "ruby", "c++", "rust"] },
-  { specialty: "Frontend", patterns: ["frontend", "front-end", "react", "vue", "angular", "javascript", "typescript", "html", "css", "next.js", "nuxt", "svelte", "web-разработчик"] },
-  { specialty: "Mobile", patterns: ["android", "ios", "flutter", "react native", "kotlin", "swift", "mobile", "ios-разработчик", "android-разработчик"] },
-  { specialty: "Data / Analytics", patterns: ["data", "analyst", "analytics", "bi", "power bi", "tableau", "sql", "etl", "machine learning", "аналитик", "data science", "ai", "artificial intelligence"] },
-  { specialty: "DevOps / SRE", patterns: ["devops", "sre", "kubernetes", "docker", "ci/cd", "terraform", "ansible", "sysadmin", "системный администратор", "linux"] },
-  { specialty: "QA / Testing", patterns: ["qa", "test", "testing", "manual tester", "automation", "тестировщик", "qa engineer", "автотестировщик"] },
-  { specialty: "Design", patterns: ["designer", "ux", "ui", "figma", "product design", "дизайнер", "graphic design", "3d"] },
-  { specialty: "Marketing / Sales", patterns: ["marketing", "smm", "seo", "sales", "business development", "продаж", "маркетолог", "менеджер по продажам", "pr", "b2b"] },
-  { specialty: "HR / Recruiting", patterns: ["hr", "recruiter", "рекрутер", "менеджер по персоналу", "talent acquisition"] },
-  { specialty: "Management / PM", patterns: ["project manager", "product manager", "scrum", "agile", "руководитель проектов", "директор", "менеджер проекта", "ceo", "cto"] },
-  { specialty: "Support / Operations", patterns: ["support", "оператор", "call center", "клиент", "operations", "поддержка", "администратор"] },
+  { specialty: "Backend", label: "Бэкенд", patterns: ["backend", "back-end", "java", "python", "golang", "node.js", "php", "django", "laravel", "spring", "c#", ".net", "ruby", "c++", "rust"] },
+  { specialty: "Frontend", label: "Фронтенд", patterns: ["frontend", "front-end", "react", "vue", "angular", "javascript", "typescript", "html", "css", "next.js", "nuxt", "svelte", "web-разработчик"] },
+  { specialty: "Mobile", label: "Мобильная разработка", patterns: ["android", "ios", "flutter", "react native", "kotlin", "swift", "mobile", "ios-разработчик", "android-разработчик"] },
+  { specialty: "Data / Analytics", label: "Данные / Аналитика", patterns: ["data", "analyst", "analytics", "bi", "power bi", "tableau", "sql", "etl", "machine learning", "аналитик", "data science", "ai", "artificial intelligence"] },
+  { specialty: "DevOps / SRE", label: "DevOps / Админ", patterns: ["devops", "sre", "kubernetes", "docker", "ci/cd", "terraform", "ansible", "sysadmin", "системный администратор", "linux"] },
+  { specialty: "QA / Testing", label: "Тестирование / QA", patterns: ["qa", "test", "testing", "manual tester", "automation", "тестировщик", "qa engineer", "автотестировщик"] },
+  { specialty: "Design", label: "Дизайн", patterns: ["designer", "ux", "ui", "figma", "product design", "дизайнер", "graphic design", "3d"] },
+  { specialty: "Marketing / Sales", label: "Маркетинг / Продажи", patterns: ["marketing", "smm", "seo", "sales", "business development", "продаж", "маркетолог", "менеджер по продажам", "pr", "b2b"] },
+  { specialty: "HR / Recruiting", label: "HR / Рекрутинг", patterns: ["hr", "recruiter", "рекрутер", "менеджер по персоналу", "talent acquisition"] },
+  { specialty: "Management / PM", label: "Менеджмент / PM", patterns: ["project manager", "product manager", "scrum", "agile", "руководитель проектов", "директор", "менеджер проекта", "ceo", "cto"] },
+  { specialty: "Support / Operations", label: "Поддержка", patterns: ["support", "оператор", "call center", "клиент", "operations", "поддержка", "администратор"] },
 ];
 
 function detectSpecialtyAI(job) {
@@ -651,7 +667,7 @@ function deriveRegion(job) {
   if (detectedCity) {
     return detectedCity;
   }
-  if (sourceId === "hh" || sourceId === "enbek" || sourceId === "rabota-nur" || sourceId === "olx-kz") {
+  if (sourceId === "hh" || sourceId === "enbek" || sourceId === "rabota-nur") {
     return "Казахстан";
   }
   if (sourceId.startsWith("tg-")) {
@@ -666,7 +682,9 @@ function deriveRegion(job) {
 }
 
 function normalizeJobs(inputJobs) {
-  return inputJobs.map((job) => {
+  return inputJobs
+    .filter((job) => !String(job.sourceId || "").startsWith("olx") && !String(job.id || "").startsWith("olx"))
+    .map((job) => {
     const region = deriveRegion(job);
     const city = detectCityAI(job);
     const specialty = detectSpecialtyAI(job);
@@ -737,7 +755,7 @@ function inDateRange(isoDate, fromTs, toTs) {
 
 function isKzJob(job) {
   const sourceId = String(job.sourceId || "").toLowerCase();
-  if (sourceId === "hh" || sourceId === "rabota-nur" || sourceId === "olx-kz" || sourceId.startsWith("tg-")) {
+  if (sourceId === "hh" || sourceId === "enbek" || sourceId === "rabota-nur" || sourceId.startsWith("tg-")) {
     return true;
   }
   const text = `${job.location || ""} ${job.description || ""}`.toLowerCase();
@@ -824,12 +842,7 @@ async function fetchHhJobs() {
   return jobs;
 }
 
-async function fetchTelegramJobs() {
-  // Disabled manual getUpdates polling to prevent 409 Conflict
-  // with the node-telegram-bot-api polling instance.
-  // All active channels have been migrated to the public parser.
-  return [];
-}
+// fetchTelegramJobs disabled – all channels use public parser now.
 
 async function fetchTelegramPublicJobs() {
   const jobs = [];
@@ -998,48 +1011,6 @@ async function fetchRabotaNurJobs() {
   return jobs;
 }
 
-async function fetchOlxJobs() {
-  const jobs = [];
-  const seen = new Set();
-  for (let page = 1; page <= 15 && jobs.length < OLX_LIMIT; page++) {
-    try {
-      const { data } = await axios.get("https://www.olx.kz/rabota/", {
-        params: { page, q: KZ_QUERY || undefined },
-        timeout: 15000,
-        headers: { "User-Agent": HH_USER_AGENT },
-      });
-      const $ = cheerio.load(String(data || ""));
-      const cards = $("a[href*='/d/obyavlenie/'], a[href*='/obyavlenie/']");
-      if (!cards.length) break;
-      cards.each((_, node) => {
-        if (jobs.length >= OLX_LIMIT) return false;
-        const href = $(node).attr("href");
-        if (!href) return undefined;
-        const url = safeAbsoluteUrl(href, "https://www.olx.kz");
-        if (seen.has(url)) return undefined;
-        seen.add(url);
-        const card = $(node).closest("[data-cy='l-card']");
-        const title = stripHtml($(node).find("h4, h5, [data-cy=l-card-title]").first().text()) || stripHtml($(node).text()) || "Вакансия OLX";
-        const location = stripHtml(card.find("[data-testid=location-date], [data-cy=l-card-location], [class*=location]").first().text()) || "Казахстан";
-        const description = stripHtml(card.find("p, [data-testid=ad-description]").first().text()).slice(0, 350) || "Вакансия с OLX KZ";
-        jobs.push({
-          id: `olx-${Buffer.from(url).toString("base64").slice(0, 20)}`,
-          title: title.slice(0, 120),
-          company: "OLX работодатель",
-          location,
-          type: detectType(`${title} ${description}`),
-          sourceId: "olx-kz",
-          tags: ["kz", "olx", "local"],
-          postedAt: new Date().toISOString(),
-          description,
-          url,
-        });
-        return undefined;
-      });
-    } catch (e) { break; }
-  }
-  return jobs;
-}
 
 function buildSources() {
   const base = KZ_SOURCE_CATALOG.map((source) => {
@@ -1070,16 +1041,6 @@ function buildSources() {
         type: source.type,
         url: source.url,
         note: `NUR.KZ scraper: до ${NUR_LIMIT} вакансий`,
-        status: "live",
-      };
-    }
-    if (source.id === "olx-kz") {
-      return {
-        id: source.id,
-        name: source.name,
-        type: source.type,
-        url: source.url,
-        note: `OLX scraper: до ${OLX_LIMIT} вакансий`,
         status: "live",
       };
     }
@@ -1182,12 +1143,6 @@ async function runBackgroundJobCheck() {
       updatePartialCache();
     } catch (e) { errors.push(`Enbek: ${e.message}`); }
 
-    // OLX
-    try {
-      const olx = await fetchOlxJobs();
-      jobs.push(...olx);
-      updatePartialCache();
-    } catch (e) { errors.push(`OLX: ${e.message}`); }
 
     // Nur.kz
     try {
@@ -1219,7 +1174,7 @@ async function runBackgroundJobCheck() {
       }
     }
 
-    if (newJobs.length > 0) {
+    if (newJobs.length > 0 && bot) {
       console.log(`Found ${newJobs.length} new jobs. Processing notifications...`);
       for (const job of newJobs) {
         const specialty = job.specialty;
@@ -1235,17 +1190,17 @@ async function runBackgroundJobCheck() {
 
         for (const sub of subscribers) {
           const msg =
-            `\u{1F680} *\u041D\u043E\u0432\u0430\u044F \u0432\u0430\u043A\u0430\u043D\u0441\u0438\u044F: ${specialty}*\n\n` +
-            `*${job.title}*\n` +
-            `\u{1F3E2} ${job.company}\n` +
-            `\u{1F4CD} ${job.location}\n` +
-            `\u{1F4BC} ${job.type}\n\n` +
-            `${(job.description || "").slice(0, 200)}...\n\n` +
-            `[\u041E\u0442\u043A\u043B\u0438\u043A\u043D\u0443\u0442\u044C\u0441\u044F](${job.url})`;
+            `🚀 *Новая вакансия: ${escapeMd(getLabel(specialty))}*\n\n` +
+            `*${escapeMd(job.title)}*\n` +
+            `🏢 ${escapeMd(job.company)}\n` +
+            `📍 ${escapeMd(job.location)}\n` +
+            `💼 ${escapeMd(job.type)}\n\n` +
+            `${escapeMd((job.description || "").slice(0, 200))}...\n\n` +
+            `[Откликнуться](${job.url})`;
 
           const favBtn = { text: "\u2B50 В избранное", callback_data: `fav_${job.id.slice(0, 50)}` };
           const openBtn = { text: "\u{1F517} Открыть", url: job.url };
-          const applyBtn = { text: "📝 Откликнуться (Быстрый отклик)", callback_data: `apply_${job.id.slice(0, 40)}` };
+          const applyBtn = { text: "📝 Откликнуться", callback_data: `apply_${job.id.slice(0, 58)}` };
 
           bot.sendMessage(sub.chatId, msg, {
             parse_mode: "Markdown",
@@ -1292,7 +1247,7 @@ async function sendDigests() {
     const top = jobs.slice(0, 5);
     if (!top.length) continue;
     let txt = "📨 *" + (doDaily ? "Ежедневный" : "Еженедельный") + " дайджест*\n\n";
-    for (const j of top) txt += "▪️ *" + j.title + "*\n🏢 " + j.company + " · 📍 " + j.location + "\n[Открыть](" + j.url + ")\n\n";
+    for (const j of top) txt += "▪️ *" + escapeMd(j.title) + "*\n🏢 " + escapeMd(j.company) + " · 📍 " + escapeMd(j.location) + "\n[Открыть](" + j.url + ")\n\n";
     bot.sendMessage(sub.chatId, txt, { parse_mode: "Markdown", disable_web_page_preview: true }).catch(e => console.error("Digest err:", e.message));
   }
   lastDigestDay = today;
