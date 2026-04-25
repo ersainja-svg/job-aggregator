@@ -808,51 +808,10 @@ async function fetchHhJobs() {
 }
 
 async function fetchTelegramJobs() {
-  if (!TELEGRAM_BOT_TOKEN || TELEGRAM_CHANNELS.length === 0) {
-    return [];
-  }
-
-  const tgUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates`;
-  const { data } = await axios.get(tgUrl, {
-    params: { timeout: 0, limit: 100 },
-    timeout: 15000,
-  });
-
-  const updates = Array.isArray(data.result) ? data.result : [];
-  const channelSet = new Set(TELEGRAM_CHANNELS.map((name) => name.toLowerCase()));
-  const jobs = [];
-
-  for (const update of updates) {
-    const post = update.channel_post;
-    if (!post) {
-      continue;
-    }
-
-    const username = String(post.chat?.username || "").toLowerCase();
-    if (!channelSet.has(username)) {
-      continue;
-    }
-
-    const text = String(post.text || post.caption || "").trim();
-    if (!text) {
-      continue;
-    }
-
-    jobs.push({
-      id: `tg-${post.chat.id}-${post.message_id}`,
-      title: text.split("\n")[0].slice(0, 120) || "Вакансия из Telegram",
-      company: "Telegram",
-      location: "Не указана",
-      type: detectType(text),
-      sourceId: `tg-${username}`,
-      tags: ["telegram", "канал", "live"],
-      postedAt: new Date((post.date || Date.now() / 1000) * 1000).toISOString(),
-      description: text.slice(0, 500),
-      url: `https://t.me/${username}/${post.message_id}`,
-    });
-  }
-
-  return jobs;
+  // Disabled manual getUpdates polling to prevent 409 Conflict
+  // with the node-telegram-bot-api polling instance.
+  // All active channels have been migrated to the public parser.
+  return [];
 }
 
 async function fetchTelegramPublicJobs() {
@@ -1207,15 +1166,6 @@ async function fetchAndNormalizeAllJobs() {
 }
 
 app.get("/api/jobs", async (req, res) => {
-  // If cache is empty, trigger a quick initial fetch
-  if (!cachedJobs || cachedJobs.length === 0) {
-    try {
-      const { normalizedJobs } = await fetchAndNormalizeAllJobs();
-      cachedJobs = normalizedJobs;
-    } catch(e) {
-      console.error("Initial fetch failed:", e.message);
-    }
-  }
 
   // Always ensure custom vacancies are in the response
   const allJobs = [...cachedJobs];
@@ -1240,8 +1190,14 @@ app.get("/api/jobs", async (req, res) => {
 
 const seenJobIds = new Set();
 let isFirstRun = true;
+let isBackgroundJobRunning = false;
 
 async function runBackgroundJobCheck() {
+  if (isBackgroundJobRunning) {
+    console.log("Background job already running, skipping...");
+    return;
+  }
+  isBackgroundJobRunning = true;
   console.log("Running background job check...");
 
   try {
@@ -1264,7 +1220,6 @@ async function runBackgroundJobCheck() {
         seenJobIds.add(job.id);
       }
       isFirstRun = false;
-      console.log(`Initialized background check with ${seenJobIds.size} existing jobs.`);
       return;
     }
 
@@ -1326,8 +1281,10 @@ async function runBackgroundJobCheck() {
         if (arr[i]) seenJobIds.add(arr[i]);
       }
     }
-  } catch (err) {
-    console.error("Background job check failed:", err.message);
+  } catch (error) {
+    console.error("Error in background job check:", error);
+  } finally {
+    isBackgroundJobRunning = false;
   }
 }
 
