@@ -548,10 +548,13 @@ async function loadJobs() {
   }
   els.statusLine.innerHTML = `<span class="live-indicator"><span class="live-dot"></span>LIVE</span> ` + parts.join(" | ");
 
-  renderSources();
-  populateSmartFilters();
-  renderAllJobSections();
-  renderAnalytics();
+  const shouldRender = !state.isAutoRefresh || newCount > 0;
+  if (shouldRender) {
+    renderSources();
+    populateSmartFilters();
+    renderAllJobSections();
+    renderAnalytics();
+  }
 
   // After render, mark as auto-refresh for next cycle
   state.isAutoRefresh = true;
