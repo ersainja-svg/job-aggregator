@@ -14,21 +14,18 @@ app.use(express.json());
 app.use(cors());
 
 const PORT = Number(process.env.PORT || 8080);
-const HH_AREA = process.env.HH_AREA || "113";
+const HH_AREA = process.env.HH_AREA || "40";
 const HH_TEXT = process.env.HH_TEXT || "";
 const HH_PER_PAGE = Math.min(Math.max(Number(process.env.HH_PER_PAGE || 100), 1), 100);
-const HH_PAGES = Math.min(Math.max(Number(process.env.HH_PAGES || 5), 1), 20);
+const HH_PAGES = Math.min(Math.max(Number(process.env.HH_PAGES || 3), 1), 5);
 const HH_DATE_FROM = process.env.HH_DATE_FROM || "";
 const HH_DATE_TO = process.env.HH_DATE_TO || "";
 const HH_USER_AGENT = process.env.HH_USER_AGENT || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-const REMOTE_JOBS_LIMIT = Math.min(Math.max(Number(process.env.REMOTE_JOBS_LIMIT || 60), 10), 200);
-const ARBEITNOW_PAGES = Math.min(Math.max(Number(process.env.ARBEITNOW_PAGES || 3), 1), 10);
-const ARBEITNOW_LIMIT = Math.min(Math.max(Number(process.env.ARBEITNOW_LIMIT || 90), 20), 300);
-const ENBEK_PAGES = Math.min(Math.max(Number(process.env.ENBEK_PAGES || 10), 1), 30);
-const ENBEK_LIMIT = Math.min(Math.max(Number(process.env.ENBEK_LIMIT || 300), 20), 1000);
-const NUR_LIMIT = Math.min(Math.max(Number(process.env.NUR_LIMIT || 120), 10), 300);
-const OLX_LIMIT = Math.min(Math.max(Number(process.env.OLX_LIMIT || 120), 10), 300);
-const KZ_QUERY = process.env.KZ_QUERY || "Казахстан Алматы Астана Шымкент Актау";
+const ENBEK_PAGES = Math.min(Math.max(Number(process.env.ENBEK_PAGES || 3), 1), 5);
+const ENBEK_LIMIT = Math.min(Math.max(Number(process.env.ENBEK_LIMIT || 2000), 20), 10000);
+const NUR_LIMIT = Math.min(Math.max(Number(process.env.NUR_LIMIT || 500), 10), 5000);
+const OLX_LIMIT = Math.min(Math.max(Number(process.env.OLX_LIMIT || 500), 10), 5000);
+const KZ_QUERY = process.env.KZ_QUERY || "Казахстан";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 
 axios.defaults.timeout = 10000;
@@ -37,67 +34,53 @@ const TELEGRAM_CHANNELS = (process.env.TELEGRAM_CHANNELS || "")
   .split(",")
   .map((item) => item.trim().replace(/^@/, ""))
   .filter(Boolean);
-const TELEGRAM_LIMIT_PER_CHANNEL = Number(process.env.TELEGRAM_LIMIT_PER_CHANNEL || 20);
+const TELEGRAM_LIMIT_PER_CHANNEL = Number(process.env.TELEGRAM_LIMIT_PER_CHANNEL || 100);
 const TELEGRAM_CHANNEL_CITY_MAP = {
-  // Алматы
-  almaty_rabota: "Алматы",
-  rabota_v_almaty: "Алматы",
+  // Алматы (проверено: работают)
+  almaty_rabota_vakansii: "Алматы",
+  vakansii_almaty: "Алматы",
   // Астана
   astana_rabota: "Астана",
-  rabota_astana_kz: "Астана",
+  vakansii_astana: "Астана",
   // Шымкент
-  shymkent_rabota: "Шымкент",
-  zhumys_shymkent: "Шымкент",
-  // Актау / Мангистау
-  rabotaaktau: "Актау",
-  aktau_rabota_7: "Актау",
+  rabota_shymkent: "Шымкент",
+  rabota_v_shymkente: "Шымкент",
   // Актобе
-  aktobe_job: "Актобе",
-  aktobe_rabota: "Актобе",
-  // Атырау
-  atyrau_rabota_1: "Атырау",
-  atyrau_job: "Атырау",
-  // Караганда / Темиртау
-  karaganda_rabota: "Караганда",
-  rabota_krg: "Караганда",
-  // Павлодар / Экибастуз
-  pavlodar_work: "Павлодар",
-  pvl_rabota: "Павлодар",
-  // Костанай / Рудный
-  kostanay_rabota: "Костанай",
-  rabota_kst: "Костанай",
-  // Кокшетау / Степногорск
-  kokshe_rabota: "Кокшетау",
-  rabota_kokshetau: "Кокшетау",
-  // Петропавловск
-  petropavlovsk_job: "Петропавловск",
-  sko_rabota: "Петропавловск",
-  // Усть-Каменогорск / Семей
-  vko_rabota: "Усть-Каменогорск",
-  rabota_vko: "Усть-Каменогорск",
-  // Талдыкорган / Конаев
-  taldykorgan_rabota: "Талдыкорган",
-  rabota_taldyk: "Талдыкорган",
+  rabota_v_aktobe: "Актобе",
+  // Караганда
+  rabota_v_karagande: "Караганда",
   // Тараз
-  taraz_rabota: "Тараз",
-  zhumys_taraz: "Тараз",
-  // Туркестан
-  turkestan_zhumys: "Туркестан",
+  rabota_taraz: "Тараз",
+  // Павлодар
+  rabota_v_pavlodare: "Павлодар",
+  // Усть-Каменогорск
+  rabota_uka: "Усть-Каменогорск",
+  rabota_oskemen: "Усть-Каменогорск",
+  // Семей
+  rabota_v_semee: "Семей",
+  // Атырау
+  atyrau_jobs: "Атырау",
+  // Актау
+  rabota_v_aktau: "Актау",
+  aktau_jobs: "Актау",
+  // Костанай
+  kostanay_vakansii: "Костанай",
+  // Уральск
+  rabota_uralsk_07: "Уральск",
+  // Петропавловск
+  petropavlovsk_rabota: "Петропавловск",
+  rabota_sko: "Петропавловск",
   // Кызылорда
-  kyzylorda_rabota: "Кызылорда",
-  // Уральск / Аксай
-  uralsk_rabota: "Уральск",
-  zapad_job: "Уральск",
-  // Жезказган / Сатпаев
-  zhez_rabota: "Жезказган",
-  satpaev_rabota: "Жезказган",
-  // Балхаш
-  balhash_rabota: "Балхаш",
-  // Жанаозен / Кульсары
-  rabota_zhanaozen: "Жанаозен",
-  zhumys_oil: "Жанаозен",
-  // Общие
-  kz_jobs: "Казахстан",
+  kyzylorda_vakansii: "Кызылорда",
+  // Туркестан
+  rabota_v_turkestane: "Туркестан",
+  // Кокшетау
+  rabota_v_kokshetau: "Кокшетау",
+  // Талдыкорган
+  taldykorgan_rabota: "Талдыкорган",
+  // Общие каналы по всему Казахстану
+  vakansii_kz: "Казахстан",
+  rabota_v_kazakhstane: "Казахстан",
 };
 
 const DEFAULT_PUBLIC_CHANNELS = Object.keys(TELEGRAM_CHANNEL_CITY_MAP).join(",");
@@ -106,8 +89,8 @@ const TELEGRAM_PUBLIC_CHANNELS = (process.env.TELEGRAM_PUBLIC_CHANNELS || DEFAUL
   .map((item) => item.trim().replace(/^@/, ""))
   .filter(Boolean);
 const TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL = Math.min(
-  Math.max(Number(process.env.TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL || 40), 5),
-  100,
+  Math.max(Number(process.env.TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL || 1000), 5),
+  2000,
 );
 // ─── Subscriptions persistence ───
 const SUBSCRIPTIONS_FILE = path.join(__dirname, "subscriptions.json");
@@ -524,13 +507,9 @@ if (TELEGRAM_BOT_TOKEN) {
 
 const KZ_SOURCE_CATALOG = [
   { id: "hh", name: "HeadHunter Kazakhstan", type: "website", url: "https://hh.kz", mode: "live" },
-  { id: "remotive", name: "Remotive API", type: "website", url: "https://remotive.com", mode: "live" },
-  { id: "arbeitnow", name: "Arbeitnow API", type: "website", url: "https://www.arbeitnow.com", mode: "live" },
   { id: "enbek", name: "Enbek.kz", type: "website", url: "https://www.enbek.kz", mode: "live" },
-  { id: "rabota-nur", name: "Rabota NUR.KZ", type: "website", url: "https://rabota.nur.kz", mode: "catalog" },
+  { id: "rabota-nur", name: "Rabota NUR.KZ", type: "website", url: "https://rabota.nur.kz", mode: "live" },
   { id: "olx-kz", name: "OLX Работа KZ", type: "website", url: "https://www.olx.kz/rabota", mode: "live" },
-  { id: "linkedin-kz", name: "LinkedIn Jobs KZ", type: "website", url: "https://www.linkedin.com/jobs", mode: "catalog" },
-  { id: "tg-kz-jobs", name: "Telegram KZ Jobs", type: "telegram", url: "https://t.me/s/kz_jobs", mode: "catalog" },
 ];
 
 app.use(cors());
@@ -855,110 +834,69 @@ async function fetchTelegramJobs() {
     });
   }
 
-  return jobs.slice(0, TELEGRAM_CHANNELS.length * TELEGRAM_LIMIT_PER_CHANNEL);
+  return jobs;
 }
 
 async function fetchTelegramPublicJobs() {
   const jobs = [];
   for (const channel of TELEGRAM_PUBLIC_CHANNELS) {
     try {
-      const { data } = await axios.get(`https://t.me/s/${channel}`, {
-        timeout: 15000,
-        headers: { "User-Agent": HH_USER_AGENT },
-      });
-      const $ = cheerio.load(String(data || ""));
-      const channelJobs = [];
-      $(".tgme_widget_message_wrap").each((_, node) => {
-        if (channelJobs.length >= TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL) {
-          return false;
-        }
-        const messageEl = $(node);
-        const text = stripHtml(messageEl.find(".tgme_widget_message_text").text());
-        if (!text) {
-          return undefined;
-        }
-        const link = messageEl.find("a.tgme_widget_message_date").attr("href");
-        const msgId = String(link || "").split("/").pop() || `${channel}-${channelJobs.length}`;
-        channelJobs.push({
-          id: `tg-public-${channel}-${msgId}`,
-          title: text.split("\n")[0].slice(0, 120) || `Вакансия @${channel}`,
-          company: `Telegram @${channel}`,
-          location: TELEGRAM_CHANNEL_CITY_MAP[channel] || "Казахстан",
-          type: detectType(text),
-          sourceId: `tg-public-${channel}`,
-          tags: ["telegram", "kz", "public"],
-          postedAt: new Date().toISOString(),
-          description: text.slice(0, 500),
-          url: link ? safeAbsoluteUrl(link, `https://t.me/${channel}`) : `https://t.me/${channel}`,
+      let url = `https://t.me/s/${channel}`;
+      let fetchedCount = 0;
+      
+      // Fetch up to 3 pages (approx 60 posts per channel)
+      for (let i = 0; i < 3 && fetchedCount < TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL; i++) {
+        const { data } = await axios.get(url, {
+          timeout: 15000,
+          headers: { "User-Agent": HH_USER_AGENT },
         });
-        return undefined;
-      });
-      jobs.push(...channelJobs);
-    } catch (_error) {
-      // Skip broken public channels silently; other sources still return.
-    }
-  }
-  return jobs;
-}
+        const $ = cheerio.load(String(data || ""));
+        const messages = $(".tgme_widget_message_wrap");
+        if (!messages.length) break;
 
-async function fetchRemotiveJobs() {
-  const { data } = await axios.get("https://remotive.com/api/remote-jobs", {
-    timeout: 15000,
-  });
+        let oldestId = null;
+        messages.each((_, node) => {
+          if (fetchedCount >= TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL) return false;
+          const messageEl = $(node);
+          const text = stripHtml(messageEl.find(".tgme_widget_message_text").text());
+          if (!text) return undefined;
 
-  const items = Array.isArray(data.jobs) ? data.jobs.slice(0, REMOTE_JOBS_LIMIT) : [];
-  return items.map((item) => ({
-    id: `remotive-${item.id}`,
-    title: item.title || "Без названия",
-    company: item.company_name || "Не указана",
-    location: item.candidate_required_location || "Remote",
-    type: "remote",
-    sourceId: "remotive",
-    tags: Array.isArray(item.tags) ? item.tags.slice(0, 5) : ["remote"],
-    postedAt: item.publication_date || new Date().toISOString(),
-    description: stripHtml(item.description || "").slice(0, 350),
-    url: item.url || "https://remotive.com",
-  }));
-}
+          const link = messageEl.find("a.tgme_widget_message_date").attr("href");
+          const timeEl = messageEl.find("time");
+          const postedAt = timeEl.attr("datetime") || new Date().toISOString();
+          
+          const msgId = String(link || "").split("/").pop() || `${channel}-${fetchedCount}`;
+          if (!oldestId || Number(msgId) < Number(oldestId)) oldestId = msgId;
 
-async function fetchArbeitnowJobs() {
-  const jobs = [];
-  let page = 1;
+          jobs.push({
+            id: `tg-public-${channel}-${msgId}`,
+            title: text.split("\n")[0].slice(0, 120) || `Вакансия @${channel}`,
+            company: `Telegram @${channel}`,
+            location: TELEGRAM_CHANNEL_CITY_MAP[channel] || "Казахстан",
+            type: detectType(text),
+            sourceId: `tg-public-${channel}`,
+            tags: ["telegram", "kz", "public"],
+            postedAt,
+            description: text.slice(0, 500),
+            url: link ? safeAbsoluteUrl(link, `https://t.me/${channel}`) : `https://t.me/${channel}`,
+          });
+          fetchedCount++;
+          return undefined;
+        });
 
-  while (page <= ARBEITNOW_PAGES && jobs.length < ARBEITNOW_LIMIT) {
-    const { data } = await axios.get("https://www.arbeitnow.com/api/job-board-api", {
-      params: { page },
-      timeout: 15000,
-    });
-
-    const items = Array.isArray(data.data) ? data.data : [];
-    if (!items.length) {
-      break;
-    }
-
-    for (const item of items) {
-      if (jobs.length >= ARBEITNOW_LIMIT) {
-        break;
+        if (oldestId) {
+          url = `https://t.me/s/${channel}?before=${oldestId}`;
+        } else {
+          break;
+        }
       }
-      jobs.push({
-        id: `arbeitnow-${item.slug || `${page}-${jobs.length}`}`,
-        title: item.title || "Без названия",
-        company: item.company_name || "Не указана",
-        location: item.location || "Remote",
-        type: item.remote ? "remote" : "full-time",
-        sourceId: "arbeitnow",
-        tags: Array.isArray(item.tags) ? item.tags.slice(0, 5) : ["job"],
-        postedAt: item.created_at || new Date().toISOString(),
-        description: stripHtml(item.description || "").slice(0, 350),
-        url: item.url || "https://www.arbeitnow.com",
-      });
+    } catch (_error) {
+      // Skip broken public channels
     }
-
-    page += 1;
   }
-
   return jobs;
 }
+
 
 async function fetchEnbekJobs() {
   const jobs = [];
@@ -1024,107 +962,88 @@ async function fetchEnbekJobs() {
   return jobs;
 }
 
-async function fetchNurJobs() {
-  const { data } = await axios.get("https://rabota.nur.kz/search", {
-    params: { text: KZ_QUERY },
-    timeout: 15000,
-    headers: { "User-Agent": HH_USER_AGENT },
-  });
-  const $ = cheerio.load(String(data || ""));
+async function fetchRabotaNurJobs() {
   const jobs = [];
   const seen = new Set();
-
-  $("a[href*='/vacancy/'], a[href*='/job/']").each((_, node) => {
-    if (jobs.length >= NUR_LIMIT) {
-      return false;
-    }
-    const href = $(node).attr("href");
-    if (!href) {
-      return undefined;
-    }
-    const url = safeAbsoluteUrl(href, "https://rabota.nur.kz");
-    if (seen.has(url)) {
-      return undefined;
-    }
-    seen.add(url);
-
-    const title =
-      stripHtml($(node).text()) ||
-      stripHtml($(node).find("h2, h3, [class*=title]").first().text()) ||
-      "Вакансия NUR.KZ";
-    const card = $(node).closest("article, li, div");
-    const company = stripHtml(card.find("[class*=company], [data-qa*=company]").first().text()) || "Не указана";
-    const location = stripHtml(card.find("[class*=city], [class*=location], [data-qa*=address]").first().text()) || "Казахстан";
-    const description =
-      stripHtml(card.find("[class*=description], [class*=snippet], p").first().text()).slice(0, 350) ||
-      "Вакансия с Rabota NUR.KZ";
-
-    jobs.push({
-      id: `nur-${Buffer.from(url).toString("base64").slice(0, 20)}`,
-      title: title.slice(0, 120),
-      company,
-      location,
-      type: detectType(`${title} ${description}`),
-      sourceId: "rabota-nur",
-      tags: ["kz", "nur.kz", "local"],
-      postedAt: new Date().toISOString(),
-      description,
-      url,
-    });
-    return undefined;
-  });
-
+  for (let page = 1; page <= 3 && jobs.length < NUR_LIMIT; page++) {
+    try {
+      const { data } = await axios.get("https://rabota.nur.kz/search", {
+        params: { query: KZ_QUERY || undefined, page },
+        timeout: 15000,
+        headers: { "User-Agent": HH_USER_AGENT },
+      });
+      const $ = cheerio.load(String(data || ""));
+      const cards = $("a[href*='/vacancy/']");
+      if (!cards.length) break;
+      cards.each((_, node) => {
+        if (jobs.length >= NUR_LIMIT) return false;
+        const href = $(node).attr("href");
+        if (!href) return undefined;
+        const url = safeAbsoluteUrl(href, "https://rabota.nur.kz");
+        if (seen.has(url)) return undefined;
+        seen.add(url);
+        const card = $(node).closest(".vacancy-item, article, div");
+        const title = stripHtml($(node).find("h3, h4, .title").text()) || stripHtml($(node).text());
+        if (!title || title.length < 3) return undefined;
+        jobs.push({
+          id: `nur-${Buffer.from(url).toString("base64").slice(0, 20)}`,
+          title: title.slice(0, 120),
+          company: stripHtml(card.find(".company, .employer").text()) || "Работодатель NUR.KZ",
+          location: stripHtml(card.find(".city, .location").text()) || "Казахстан",
+          type: detectType(title),
+          sourceId: "rabota-nur",
+          tags: ["kz", "local"],
+          postedAt: new Date().toISOString(),
+          description: "Вакансия с портала Rabota.nur.kz",
+          url,
+        });
+        return undefined;
+      });
+    } catch (e) { break; }
+  }
   return jobs;
 }
 
 async function fetchOlxJobs() {
-  const { data } = await axios.get("https://www.olx.kz/rabota/", {
-    timeout: 15000,
-    headers: { "User-Agent": HH_USER_AGENT },
-  });
-  const $ = cheerio.load(String(data || ""));
   const jobs = [];
   const seen = new Set();
-
-  $("a[href*='/d/obyavlenie/'], a[href*='/ads/job/']").each((_, node) => {
-    if (jobs.length >= OLX_LIMIT) {
-      return false;
-    }
-    const href = $(node).attr("href");
-    if (!href) {
-      return undefined;
-    }
-    const url = safeAbsoluteUrl(href, "https://www.olx.kz");
-    if (seen.has(url)) {
-      return undefined;
-    }
-    seen.add(url);
-
-    const card = $(node).closest("div[data-cy=l-card], article, li, div");
-    const title =
-      stripHtml($(node).find("h4, h5, [data-cy=l-card-title]").first().text()) ||
-      stripHtml($(node).text()) ||
-      "Вакансия OLX";
-    const location =
-      stripHtml(card.find("[data-testid=location-date], [data-cy=l-card-location], [class*=location]").first().text()) ||
-      "Казахстан";
-    const description = stripHtml(card.find("p, [data-testid=ad-description]").first().text()).slice(0, 350) || "Вакансия с OLX KZ";
-
-    jobs.push({
-      id: `olx-${Buffer.from(url).toString("base64").slice(0, 20)}`,
-      title: title.slice(0, 120),
-      company: "OLX работодатель",
-      location,
-      type: detectType(`${title} ${description}`),
-      sourceId: "olx-kz",
-      tags: ["kz", "olx", "local"],
-      postedAt: new Date().toISOString(),
-      description,
-      url,
-    });
-    return undefined;
-  });
-
+  for (let page = 1; page <= 3 && jobs.length < OLX_LIMIT; page++) {
+    try {
+      const { data } = await axios.get("https://www.olx.kz/rabota/", {
+        params: { page, q: KZ_QUERY || undefined },
+        timeout: 15000,
+        headers: { "User-Agent": HH_USER_AGENT },
+      });
+      const $ = cheerio.load(String(data || ""));
+      const cards = $("a[href*='/d/obyavlenie/'], a[href*='/obyavlenie/']");
+      if (!cards.length) break;
+      cards.each((_, node) => {
+        if (jobs.length >= OLX_LIMIT) return false;
+        const href = $(node).attr("href");
+        if (!href) return undefined;
+        const url = safeAbsoluteUrl(href, "https://www.olx.kz");
+        if (seen.has(url)) return undefined;
+        seen.add(url);
+        const card = $(node).closest("[data-cy='l-card']");
+        const title = stripHtml($(node).find("h4, h5, [data-cy=l-card-title]").first().text()) || stripHtml($(node).text()) || "Вакансия OLX";
+        const location = stripHtml(card.find("[data-testid=location-date], [data-cy=l-card-location], [class*=location]").first().text()) || "Казахстан";
+        const description = stripHtml(card.find("p, [data-testid=ad-description]").first().text()).slice(0, 350) || "Вакансия с OLX KZ";
+        jobs.push({
+          id: `olx-${Buffer.from(url).toString("base64").slice(0, 20)}`,
+          title: title.slice(0, 120),
+          company: "OLX работодатель",
+          location,
+          type: detectType(`${title} ${description}`),
+          sourceId: "olx-kz",
+          tags: ["kz", "olx", "local"],
+          postedAt: new Date().toISOString(),
+          description,
+          url,
+        });
+        return undefined;
+      });
+    } catch (e) { break; }
+  }
   return jobs;
 }
 
@@ -1137,26 +1056,6 @@ function buildSources() {
         type: source.type,
         url: source.url,
         note: `HH API: ${HH_PAGES} стр., по ${HH_PER_PAGE} вакансий, регион: ${HH_AREA}`,
-        status: "live",
-      };
-    }
-    if (source.id === "remotive") {
-      return {
-        id: source.id,
-        name: source.name,
-        type: source.type,
-        url: source.url,
-        note: `Remote API: до ${REMOTE_JOBS_LIMIT} вакансий`,
-        status: "live",
-      };
-    }
-    if (source.id === "arbeitnow") {
-      return {
-        id: source.id,
-        name: source.name,
-        type: source.type,
-        url: source.url,
-        note: `Global API: до ${ARBEITNOW_LIMIT} вакансий (${ARBEITNOW_PAGES} стр.)`,
         status: "live",
       };
     }
@@ -1241,20 +1140,6 @@ async function fetchAndNormalizeAllJobs() {
   }
 
   try {
-    const remotiveJobs = await fetchRemotiveJobs();
-    jobs.push(...remotiveJobs);
-  } catch (error) {
-    errors.push(`Remotive: ${error.message}`);
-  }
-
-  try {
-    const arbeitnowJobs = await fetchArbeitnowJobs();
-    jobs.push(...arbeitnowJobs);
-  } catch (error) {
-    errors.push(`Arbeitnow: ${error.message}`);
-  }
-
-  try {
     const enbekJobs = await fetchEnbekJobs();
     jobs.push(...enbekJobs);
   } catch (error) {
@@ -1266,6 +1151,13 @@ async function fetchAndNormalizeAllJobs() {
     jobs.push(...olxJobs);
   } catch (error) {
     errors.push(`OLX: ${error.message}`);
+  }
+
+  try {
+    const nurJobs = await fetchRabotaNurJobs();
+    jobs.push(...nurJobs);
+  } catch (error) {
+    errors.push(`NUR.KZ: ${error.message}`);
   }
 
   try {
@@ -1297,22 +1189,33 @@ async function fetchAndNormalizeAllJobs() {
 }
 
 app.get("/api/jobs", async (req, res) => {
-  const { normalizedJobs, errors } = await fetchAndNormalizeAllJobs();
-  // Keep cached copy for bot search
-  cachedJobs = normalizedJobs;
-
-
-  let kzJobs = normalizedJobs.filter((job) => isKzJob(job));
-  if (!kzJobs.length) {
-    kzJobs = normalizedJobs.slice(0, 120);
-    errors.push("KZ fallback: региональные источники временно недоступны, показаны общие вакансии.");
+  // If cache is empty, trigger a quick initial fetch
+  if (!cachedJobs || cachedJobs.length === 0) {
+    try {
+      const { normalizedJobs } = await fetchAndNormalizeAllJobs();
+      cachedJobs = normalizedJobs;
+    } catch(e) {
+      console.error("Initial fetch failed:", e.message);
+    }
   }
 
+  // Always ensure custom vacancies are in the response
+  const allJobs = [...cachedJobs];
+  for (const cv of customVacancies) {
+    if (!allJobs.find(j => j.id === cv.id)) {
+      allJobs.unshift({ ...cv, region: cv.location || 'Казахстан', city: cv.location || 'Казахстан', specialty: 'Other' });
+    }
+  }
+  // Sort newest first
+  allJobs.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+
+  let kzJobs = allJobs.filter((job) => isKzJob(job));
+
   res.json({
-    jobs: normalizedJobs,
+    jobs: allJobs,
     kzJobs,
     sources: buildSources(),
-    errors,
+    errors: [],
     updatedAt: new Date().toISOString(),
   });
 });
@@ -1321,16 +1224,25 @@ const seenJobIds = new Set();
 let isFirstRun = true;
 
 async function runBackgroundJobCheck() {
-  if (!bot) return;
   console.log("Running background job check...");
 
   try {
     const { normalizedJobs } = await fetchAndNormalizeAllJobs();
-    // Update cached jobs for search/favorites
-    cachedJobs = normalizedJobs;
+
+    // Merge with custom vacancies so they're never lost
+    const mergedJobs = [...normalizedJobs];
+    for (const cv of customVacancies) {
+      if (!mergedJobs.find(j => j.id === cv.id)) {
+        mergedJobs.unshift({ ...cv, region: cv.location || 'Казахстан', city: cv.location || 'Казахстан', specialty: 'Other' });
+      }
+    }
+    mergedJobs.sort((a, b) => new Date(b.postedAt) - new Date(a.postedAt));
+
+    // Update cached jobs
+    cachedJobs = mergedJobs;
 
     if (isFirstRun) {
-      for (const job of normalizedJobs) {
+      for (const job of mergedJobs) {
         seenJobIds.add(job.id);
       }
       isFirstRun = false;
@@ -1339,7 +1251,7 @@ async function runBackgroundJobCheck() {
     }
 
     const newJobs = [];
-    for (const job of normalizedJobs) {
+    for (const job of mergedJobs) {
       if (!seenJobIds.has(job.id)) {
         newJobs.push(job);
         seenJobIds.add(job.id);
@@ -1387,11 +1299,11 @@ async function runBackgroundJobCheck() {
       }
     }
 
-    // Trim seen IDs to prevent memory leaks
-    if (seenJobIds.size > 5000) {
+    // Trim seen IDs to prevent memory leaks, but keep a large history
+    if (seenJobIds.size > 100000) {
       const arr = Array.from(seenJobIds);
       seenJobIds.clear();
-      for (let i = arr.length - 2000; i < arr.length; i++) {
+      for (let i = arr.length - 50000; i < arr.length; i++) {
         if (arr[i]) seenJobIds.add(arr[i]);
       }
     }
@@ -1430,8 +1342,8 @@ async function sendDigests() {
 setInterval(sendDigests, 60*60*1000);
 setTimeout(sendDigests, 30000);
 
-setInterval(runBackgroundJobCheck, 15 * 60 * 1000);
-setTimeout(runBackgroundJobCheck, 5000);
+setInterval(runBackgroundJobCheck, 1 * 60 * 1000);
+setTimeout(runBackgroundJobCheck, 1000);
 
 // ─── Auth API Endpoints ───
 app.post("/api/auth/register", (req, res) => {
@@ -1496,17 +1408,23 @@ app.get("/api/resumes", (req, res) => {
 });
 
 // ─── Cabinet API Endpoints ───
-app.post("/api/cabinet/resume", requireAuth, (req, res) => {
+app.post("/api/cabinet/resume", (req, res) => {
   try {
-    const { name, specialty, experience, salary, skills } = req.body;
+    const token = req.headers.authorization?.split(" ")[1];
+    const userId = token && activeSessions.has(token) ? activeSessions.get(token) : "anonymous";
+    const { name, specialty, experience, salary, skills, contact } = req.body;
+    if (!name || !specialty) {
+      return res.status(400).json({ error: "Имя и специальность обязательны" });
+    }
     const newResume = {
       id: "res-" + Date.now(),
-      userId: req.userId,
+      userId,
       name: name || "Аноним",
       specialty: specialty || "Не указана",
       experience: experience || "0",
       salary: salary || "По договоренности",
       skills: skills || "",
+      contact: contact || "",
       createdAt: new Date().toISOString()
     };
     customResumes.unshift(newResume);
@@ -1517,12 +1435,17 @@ app.post("/api/cabinet/resume", requireAuth, (req, res) => {
   }
 });
 
-app.post("/api/cabinet/vacancy", requireAuth, (req, res) => {
+app.post("/api/cabinet/vacancy", (req, res) => {
   try {
+    const token = req.headers.authorization?.split(" ")[1];
+    const userId = token && activeSessions.has(token) ? activeSessions.get(token) : "anonymous";
     const { company, title, location, salary, description, url } = req.body;
+    if (!title) {
+      return res.status(400).json({ error: "Должность обязательна" });
+    }
     const newVacancy = {
       id: "vac-" + Date.now(),
-      userId: req.userId,
+      userId,
       title: title || "Без названия",
       company: company || "Частное лицо",
       location: location || "Не указан",
@@ -1536,7 +1459,7 @@ app.post("/api/cabinet/vacancy", requireAuth, (req, res) => {
     };
     customVacancies.unshift(newVacancy);
     saveVacancies();
-    // Prepend to cache so it shows up instantly before the next background check
+    // Prepend to cache so it shows up instantly
     if (cachedJobs) {
       cachedJobs.unshift(newVacancy);
     }

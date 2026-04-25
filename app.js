@@ -71,6 +71,7 @@ const state = {
   favorites: new Set(),
   previousJobIds: new Set(),
   isAutoRefresh: false,
+  currentDisplayCount: 50,
   resumes: [],
 };
 
@@ -85,8 +86,6 @@ const els = {
   vacancyCount: document.querySelector("#vacancyCount"),
   jobList: document.querySelector("#jobList"),
   favoriteJobList: document.querySelector("#favoriteJobList"),
-  remoteJobList: document.querySelector("#remoteJobList"),
-  foreignJobList: document.querySelector("#foreignJobList"),
   cityJobList: document.querySelector("#cityJobList"),
   telegramJobList: document.querySelector("#telegramJobList"),
   directJobList: document.querySelector("#directJobList"),
@@ -94,8 +93,6 @@ const els = {
   sourceList: document.querySelector("#sourceList"),
   emptyState: document.querySelector("#emptyState"),
   favoriteEmptyState: document.querySelector("#favoriteEmptyState"),
-  remoteEmptyState: document.querySelector("#remoteEmptyState"),
-  foreignEmptyState: document.querySelector("#foreignEmptyState"),
   cityEmptyState: document.querySelector("#cityEmptyState"),
   telegramEmptyState: document.querySelector("#telegramEmptyState"),
   directEmptyState: document.querySelector("#directEmptyState"),
@@ -193,27 +190,39 @@ function buildJobCard(job) {
   return node;
 }
 
-function renderJobCollection(targetList, targetEmptyState, jobs, emptyMessage) {
+function renderJobCollection(targetList, targetEmptyState, jobs, emptyMsg) {
   targetList.innerHTML = "";
   if (!jobs.length) {
-    targetEmptyState.textContent = emptyMessage;
+    targetEmptyState.textContent = emptyMsg;
     targetEmptyState.classList.remove("hidden");
     return;
   }
   targetEmptyState.classList.add("hidden");
-  jobs.forEach((job, index) => {
+
+  const toShow = jobs.slice(0, state.currentDisplayCount);
+  
+  toShow.forEach((job, index) => {
     const cardFragment = buildJobCard(job);
     const card = cardFragment.querySelector(".job-card");
     if (card) {
-      // Staggered animation delay
       card.style.animationDelay = `${index * 0.04}s`;
-      // Mark new cards
       if (state.isAutoRefresh && !state.previousJobIds.has(job.id)) {
         card.classList.add("is-new");
       }
     }
     targetList.appendChild(cardFragment);
   });
+
+  if (jobs.length > state.currentDisplayCount) {
+    const loadMoreBtn = document.createElement("button");
+    loadMoreBtn.className = "load-more-btn";
+    loadMoreBtn.textContent = `Показать еще (осталось ${jobs.length - state.currentDisplayCount})`;
+    loadMoreBtn.addEventListener("click", () => {
+      state.currentDisplayCount += 50;
+      renderAllJobSections();
+    });
+    targetList.appendChild(loadMoreBtn);
+  }
 }
 
 function renderSources() {
@@ -420,10 +429,7 @@ function renderCityJobs() {
 
 function renderAllJobSections() {
   renderJobs();
-
   renderFavoriteJobs();
-  renderRemoteJobs();
-  renderForeignJobs();
   renderCityFilterButtons();
   renderCityJobs();
   renderTelegramJobs();
@@ -466,6 +472,7 @@ function renderResumes() {
       <p class="job-description">${res.skills}</p>
       <div class="job-footer">
         <span class="job-date">Опубликовано: ${formatDate(res.createdAt)}</span>
+        <a href="${res.contact?.startsWith('@') ? `https://t.me/${res.contact.replace('@','')}` : `tel:${res.contact}`}" class="apply-btn" target="_blank">Связаться</a>
       </div>
     `;
     els.resumesList.appendChild(card);
@@ -591,6 +598,7 @@ function attachEvents() {
     els.refreshBtn.textContent = "Обновляем...";
     try {
       await loadJobs();
+      state.currentDisplayCount = 50;
       renderAllJobSections();
     } catch (error) {
       els.statusLine.textContent = `Ошибка загрузки: ${error.message}`;
@@ -603,6 +611,8 @@ function attachEvents() {
     tab.addEventListener("click", () => {
       state.activeSection = tab.dataset.section;
       renderSections();
+      // Scroll tab into view on mobile
+      tab.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
     });
   }
 
@@ -619,14 +629,14 @@ async function init() {
     els.statusLine.textContent = `Ошибка загрузки: ${error.message}`;
   }
 
-  // Auto-refresh every 60 seconds
+  // Auto-refresh every 3 seconds for instant vacancy updates
   setInterval(async () => {
     try {
       await loadJobs();
     } catch (_e) {
       // Silently retry on next cycle
     }
-  }, 60 * 1000);
+  }, 3 * 1000);
 }
 
 init();
