@@ -1,12 +1,13 @@
 [
   {
     "chatId": 5701424499,
-    "specialties": [],
+    "specialties": [
+      "All"
+    ],
     "cities": [
       "Актау"
     ],
     "favorites": [],
-    "createdAt": "2026-04-24T20:10:01.173Z",
     "resume": {
       "skills": "",
       "experience": "",
@@ -15,6 +16,7 @@
     "lang": "ru",
     "digest": "off",
     "salaryMin": 0,
-    "salaryMax": 0
+    "salaryMax": 0,
+    "createdAt": "2026-04-24T20:10:01.173Z"
   }
 ]
