@@ -163,9 +163,25 @@ function hashPassword(password) {
 // ─── Telegram Bot ───
 let bot = null;
 if (TELEGRAM_BOT_TOKEN) {
-  try {
-    bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
-    console.log("Telegram Bot started in polling mode.");
+  // Delay bot startup by 5s to allow old connections to close
+  setTimeout(() => {
+    try {
+      bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { 
+        polling: {
+          interval: 2000,
+          autoStart: true,
+          params: { timeout: 10 }
+        }
+      });
+      console.log("Telegram Bot started with delay and custom polling options.");
+      
+      bot.on("polling_error", (error) => {
+        console.error(`Telegram Polling Error: ${error.code} - ${error.message}`);
+      });
+      
+      bot.on("error", (error) => {
+        console.error(`Telegram General Error: ${error.message}`);
+      });
 
     function mainMenuKb() {
       return { reply_markup: { inline_keyboard: [
@@ -517,9 +533,10 @@ if (TELEGRAM_BOT_TOKEN) {
       }
     });
 
-  } catch (error) {
-    console.error("Failed to start Telegram Bot:", error);
-  }
+    } catch (error) {
+      console.error("Failed to start Telegram Bot:", error);
+    }
+  }, 5000);
 }
 
 
