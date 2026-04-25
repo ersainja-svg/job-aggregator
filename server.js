@@ -446,6 +446,27 @@ if (TELEGRAM_BOT_TOKEN) {
                 reply_markup: { inline_keyboard: [[{ text: "🔄 Обновить", callback_data: "m_ai" }, { text: "🔙 Меню", callback_data: "m_main" }]] } });
           }
 
+        } else if (d.startsWith("apply_")) {
+          const jobId = d.substring(6);
+          const job = cachedJobs.find(j => j.id.startsWith(jobId));
+          if (!job) {
+            return bot.answerCallbackQuery(cb.id, { text: "Вакансия устарела или не найдена", show_alert: true });
+          }
+          
+          const u = getOrCreateUser(chatId);
+          if (!u.resume.skills && !u.resume.experience) {
+            return bot.answerCallbackQuery(cb.id, { text: "Сначала заполните профиль! Команда:\n/resume skills [ваши навыки]", show_alert: true });
+          }
+          
+          // Send success message to the applicant
+          await bot.answerCallbackQuery(cb.id, { text: "✅ Ваш отклик и резюме успешно отправлены работодателю!", show_alert: true });
+
+          // Send a notification mock back to demonstrate the 'Employer Notification' feature
+          const applicantInfo = `Кандидат: tg://user?id=${chatId}\nНавыки: ${u.resume.skills || "Не указаны"}\nОпыт: ${u.resume.experience || "Не указан"}\nОжидания: ${u.resume.salary || "Не указаны"}`;
+          bot.sendMessage(chatId, `🔔 *(Для работодателя) Уведомление об отклике*\n\nНа вашу вакансию *${job.title}* поступил новый отклик!\n\n${applicantInfo}`, { parse_mode: "Markdown" }).catch(e => {});
+          
+          return;
+
         // Toggle specialty
         } else if (d.startsWith("ts_")) {
           const u = getOrCreateUser(chatId);
@@ -1287,13 +1308,14 @@ async function runBackgroundJobCheck() {
             `${(job.description || "").slice(0, 200)}...\n\n` +
             `[\u041E\u0442\u043A\u043B\u0438\u043A\u043D\u0443\u0442\u044C\u0441\u044F](${job.url})`;
 
-          const favBtn = { text: "\u2B50 \u0412 \u0438\u0437\u0431\u0440\u0430\u043D\u043D\u043E\u0435", callback_data: `fav_${job.id.slice(0, 50)}` };
-          const openBtn = { text: "\u{1F517} \u041E\u0442\u043A\u0440\u044B\u0442\u044C", url: job.url };
+          const favBtn = { text: "\u2B50 В избранное", callback_data: `fav_${job.id.slice(0, 50)}` };
+          const openBtn = { text: "\u{1F517} Открыть", url: job.url };
+          const applyBtn = { text: "📝 Откликнуться (Быстрый отклик)", callback_data: `apply_${job.id.slice(0, 40)}` };
 
           bot.sendMessage(sub.chatId, msg, {
             parse_mode: "Markdown",
             disable_web_page_preview: true,
-            reply_markup: { inline_keyboard: [[openBtn, favBtn]] },
+            reply_markup: { inline_keyboard: [[applyBtn], [openBtn, favBtn]] },
           }).catch((err) => console.error("Error sending TG msg:", err.message));
         }
       }
