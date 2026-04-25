@@ -17,14 +17,14 @@ const PORT = Number(process.env.PORT || 8080);
 const HH_AREA = process.env.HH_AREA || "40";
 const HH_TEXT = process.env.HH_TEXT || "";
 const HH_PER_PAGE = Math.min(Math.max(Number(process.env.HH_PER_PAGE || 100), 1), 100);
-const HH_PAGES = Math.min(Math.max(Number(process.env.HH_PAGES || 3), 1), 5);
+const HH_PAGES = Number(process.env.HH_PAGES || 100);
 const HH_DATE_FROM = process.env.HH_DATE_FROM || "";
 const HH_DATE_TO = process.env.HH_DATE_TO || "";
 const HH_USER_AGENT = process.env.HH_USER_AGENT || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-const ENBEK_PAGES = Math.min(Math.max(Number(process.env.ENBEK_PAGES || 3), 1), 5);
-const ENBEK_LIMIT = Math.min(Math.max(Number(process.env.ENBEK_LIMIT || 2000), 20), 10000);
-const NUR_LIMIT = Math.min(Math.max(Number(process.env.NUR_LIMIT || 500), 10), 5000);
-const OLX_LIMIT = Math.min(Math.max(Number(process.env.OLX_LIMIT || 500), 10), 5000);
+const ENBEK_PAGES = Number(process.env.ENBEK_PAGES || 100);
+const ENBEK_LIMIT = Number(process.env.ENBEK_LIMIT || 100000);
+const NUR_LIMIT = Number(process.env.NUR_LIMIT || 100000);
+const OLX_LIMIT = Number(process.env.OLX_LIMIT || 100000);
 const KZ_QUERY = process.env.KZ_QUERY || "Казахстан";
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 
@@ -88,10 +88,7 @@ const TELEGRAM_PUBLIC_CHANNELS = (process.env.TELEGRAM_PUBLIC_CHANNELS || DEFAUL
   .split(",")
   .map((item) => item.trim().replace(/^@/, ""))
   .filter(Boolean);
-const TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL = Math.min(
-  Math.max(Number(process.env.TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL || 1000), 5),
-  2000,
-);
+const TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL = Number(process.env.TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL || 100000);
 // ─── Subscriptions persistence ───
 const SUBSCRIPTIONS_FILE = path.join(__dirname, "subscriptions.json");
 let subscriptions = [];
@@ -865,8 +862,8 @@ async function fetchTelegramPublicJobs() {
       let url = `https://t.me/s/${channel}`;
       let fetchedCount = 0;
       
-      // Fetch up to 3 pages (approx 60 posts per channel)
-      for (let i = 0; i < 3 && fetchedCount < TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL; i++) {
+      // Fetch up to 100 pages (approx 2000 posts per channel)
+      for (let i = 0; i < 100 && fetchedCount < TELEGRAM_PUBLIC_LIMIT_PER_CHANNEL; i++) {
         const { data } = await axios.get(url, {
           timeout: 15000,
           headers: { "User-Agent": HH_USER_AGENT },
@@ -986,7 +983,7 @@ async function fetchEnbekJobs() {
 async function fetchRabotaNurJobs() {
   const jobs = [];
   const seen = new Set();
-  for (let page = 1; page <= 3 && jobs.length < NUR_LIMIT; page++) {
+  for (let page = 1; page <= 100 && jobs.length < NUR_LIMIT; page++) {
     try {
       const { data } = await axios.get("https://rabota.nur.kz/search", {
         params: { query: KZ_QUERY || undefined, page },
@@ -1028,7 +1025,7 @@ async function fetchRabotaNurJobs() {
 async function fetchOlxJobs() {
   const jobs = [];
   const seen = new Set();
-  for (let page = 1; page <= 3 && jobs.length < OLX_LIMIT; page++) {
+  for (let page = 1; page <= 100 && jobs.length < OLX_LIMIT; page++) {
     try {
       const { data } = await axios.get("https://www.olx.kz/rabota/", {
         params: { page, q: KZ_QUERY || undefined },
