@@ -41,21 +41,5 @@
     "salaryMin": 0,
     "salaryMax": 0,
     "createdAt": "2026-04-25T11:49:38.093Z"
-  },
-  {
-    "chatId": 1668471025,
-    "specialties": [],
-    "cities": [],
-    "favorites": [],
-    "resume": {
-      "skills": "",
-      "experience": "",
-      "salary": ""
-    },
-    "lang": "ru",
-    "digest": "off",
-    "salaryMin": 0,
-    "salaryMax": 0,
-    "createdAt": "2026-04-29T18:11:43.323Z"
   }
 ]
